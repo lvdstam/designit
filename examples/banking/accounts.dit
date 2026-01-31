@@ -1,0 +1,95 @@
+// Banking System - Account Model
+// Entity-Relationship Diagram for account data
+
+erd AccountModel {
+    entity Customer {
+        id: integer [pk]
+        email: string [unique]
+        password_hash: string
+        first_name: string
+        last_name: string
+        phone: string [pattern: "\\+?[0-9]{10,15}"]
+        created_at: datetime
+        status: string
+    }
+
+    entity Account {
+        id: integer [pk]
+        account_number: string [unique, pattern: "[0-9]{10}"]
+        customer_id: integer [fk -> Customer.id]
+        account_type: string
+        balance: decimal
+        currency: string
+        opened_at: datetime
+        status: string
+    }
+
+    entity Address {
+        id: integer [pk]
+        customer_id: integer [fk -> Customer.id]
+        street: string
+        city: string
+        state: string
+        postal_code: string
+        country: string
+        is_primary: boolean
+    }
+
+    entity Card {
+        id: integer [pk]
+        account_id: integer [fk -> Account.id]
+        card_number: string [unique]
+        expiry_date: date
+        cvv_hash: string
+        status: string
+        daily_limit: decimal
+        ...  // TBD - additional card details
+    }
+
+    // Relationships
+    relationship has_accounts: Customer -1:n-> Account
+    relationship has_addresses: Customer -1:n-> Address
+    relationship has_cards: Account -1:n-> Card
+}
+
+// Data Dictionary for Account Domain
+datadict {
+    // Customer Types
+    CustomerStatus = "active" | "suspended" | "closed"
+
+    // Account Types  
+    AccountType = "checking" | "savings" | "money_market" | "cd"
+
+    AccountStatus = "active" | "frozen" | "closed"
+
+    // Card Types
+    CardStatus = "active" | "blocked" | "expired" | "cancelled"
+
+    // Compound Types
+    CustomerProfile = {
+        customer_id: integer
+        full_name: string
+        email: string
+        phone: string [optional]
+        primary_address: Address
+    }
+
+    AccountSummary = {
+        account_number: string [pattern: "[0-9]{10}"]
+        account_type: AccountType
+        balance: decimal
+        currency: string
+        status: AccountStatus
+    }
+
+    Address = {
+        street: string
+        city: string
+        state: string [optional]
+        postal_code: string
+        country: string
+    }
+
+    // Lists
+    AccountList = AccountSummary[] [min: 0, max: 100]
+}

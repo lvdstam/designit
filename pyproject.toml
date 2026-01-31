@@ -1,0 +1,52 @@
+[project]
+name = "designit"
+version = "0.1.0"
+description = "A DSL for creating Yourdon-style design documents"
+readme = "README.md"
+authors = [
+    { name = "Louis van der Stam", email = "louis@stamsma.nl" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "lark>=1.2.2",
+    "pydantic>=2.10",
+    "pygls>=2.0",
+    "click>=8.1",
+    "graphviz>=0.20",
+    "rich>=13.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+designit = "designit.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+]

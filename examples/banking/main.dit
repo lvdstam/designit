@@ -1,0 +1,180 @@
+// Banking System - Main Design Document
+// This demonstrates a multi-file design using DesignIt DSL
+
+import "./accounts.dit"
+import "./transactions.dit"
+
+// Main Data Flow Diagram
+dfd BankingSystem {
+    // External Entities
+    external Customer {
+        description: "Bank customer using the system"
+    }
+
+    external BankTeller {
+        description: "Bank employee processing transactions"
+    }
+
+    external ExternalBank {
+        description: "External banking system for transfers"
+    }
+
+    // Processes
+    process AuthenticateUser {
+        description: "Validates user credentials"
+        inputs: [Credentials]
+        outputs: [AuthToken, AuthError]
+    }
+
+    process ProcessTransaction {
+        description: "Handles all transaction types"
+        inputs: [TransactionRequest]
+        outputs: [TransactionResult, AccountUpdate]
+    }
+
+    process GenerateReport {
+        description: "Creates account statements and reports"
+        inputs: [ReportRequest]
+        outputs: [Report]
+    }
+
+    process HandleTransfer {
+        // Placeholder - details TBD
+        ...
+    }
+
+    // Data Stores
+    datastore CustomerDB {
+        description: "Customer account information"
+    }
+
+    datastore TransactionLog {
+        description: "Audit trail of all transactions"
+    }
+
+    datastore SessionStore {
+        description: "Active user sessions"
+    }
+
+    // Data Flows
+    flow Credentials: Customer -> AuthenticateUser
+    flow AuthToken: AuthenticateUser -> Customer
+    flow CustomerLookup: AuthenticateUser -> CustomerDB
+    flow TransactionRequest: Customer -> ProcessTransaction
+    flow TransactionResult: ProcessTransaction -> Customer
+    flow AccountUpdate: ProcessTransaction -> CustomerDB
+    flow TransactionRecord: ProcessTransaction -> TransactionLog
+    flow ReportRequest: Customer -> GenerateReport
+    flow Report: GenerateReport -> Customer
+    flow HistoryQuery: GenerateReport -> TransactionLog
+    flow TransferRequest: BankTeller -> HandleTransfer
+    flow ExternalTransfer: HandleTransfer -> ExternalBank
+}
+
+// State Transition Diagram for Transaction Processing
+std TransactionLifecycle {
+    initial: Pending
+
+    state Pending {
+        description: "Transaction submitted, awaiting processing"
+    }
+
+    state Validating {
+        description: "Checking account balance and limits"
+    }
+
+    state Processing {
+        description: "Executing the transaction"
+    }
+
+    state Completed {
+        description: "Transaction successfully completed"
+    }
+
+    state Failed {
+        description: "Transaction failed"
+    }
+
+    state Reversed {
+        description: "Transaction was reversed"
+        ...  // TBD - reversal details
+    }
+
+    transition validate: Pending -> Validating {
+        trigger: "submit"
+    }
+
+    transition approve: Validating -> Processing {
+        trigger: "validation_passed"
+    }
+
+    transition reject: Validating -> Failed {
+        trigger: "validation_failed"
+    }
+
+    transition complete: Processing -> Completed {
+        trigger: "processing_done"
+    }
+
+    transition fail: Processing -> Failed {
+        trigger: "processing_error"
+    }
+
+    transition reverse: Completed -> Reversed {
+        trigger: "reversal_requested"
+        guard: "within_reversal_window"
+    }
+}
+
+// Structure Chart for Main Application
+structure BankingApplication {
+    module Main {
+        description: "Application entry point"
+        calls: [InitializeSystem, RunMainLoop, Shutdown]
+    }
+
+    module InitializeSystem {
+        description: "System initialization"
+        calls: [LoadConfiguration, ConnectDatabase, StartServices]
+    }
+
+    module LoadConfiguration {
+        data_couple: ConfigData
+    }
+
+    module ConnectDatabase {
+        data_couple: ConnectionParams
+        control_couple: ConnectionStatus
+    }
+
+    module StartServices {
+        ...  // TBD
+    }
+
+    module RunMainLoop {
+        description: "Main processing loop"
+        calls: [HandleRequest, ProcessQueue]
+    }
+
+    module HandleRequest {
+        data_couple: Request
+        control_couple: ResponseStatus
+    }
+
+    module ProcessQueue {
+        ...  // TBD
+    }
+
+    module Shutdown {
+        description: "Graceful shutdown"
+        calls: [SaveState, CloseConnections]
+    }
+
+    module SaveState {
+        data_couple: SystemState
+    }
+
+    module CloseConnections {
+        control_couple: ShutdownComplete
+    }
+}

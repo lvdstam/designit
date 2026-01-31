@@ -1,0 +1,12 @@
+// Simple test fixture for parser tests
+dfd SimpleSystem {
+    external User {
+        description: "Test user"
+    }
+    
+    process HandleRequest {
+        description: "Handles requests"
+    }
+    
+    flow Request: User -> HandleRequest
+}

@@ -1,0 +1,131 @@
+// Banking System - Transaction Model
+// Data Flow and Entity diagrams for transactions
+
+// Transaction DFD (sub-diagram)
+dfd TransactionProcessing {
+    external AccountSystem {
+        description: "Core account management"
+    }
+
+    process ValidateTransaction {
+        description: "Validates transaction against business rules"
+        inputs: [TransactionRequest]
+        outputs: [ValidationResult]
+    }
+
+    process ExecuteTransaction {
+        description: "Executes the validated transaction"
+        inputs: [ValidatedTransaction]
+        outputs: [TransactionResult, BalanceUpdate]
+    }
+
+    process RecordTransaction {
+        description: "Records transaction in audit log"
+        inputs: [TransactionResult]
+        outputs: [AuditRecord]
+    }
+
+    process NotifyCustomer {
+        // Placeholder for notification system
+        ...
+    }
+
+    datastore TransactionQueue {
+        description: "Pending transactions"
+    }
+
+    datastore AuditLog {
+        description: "Transaction audit trail"
+    }
+
+    // Flows
+    flow TransactionRequest: AccountSystem -> ValidateTransaction
+    flow ValidationResult: ValidateTransaction -> AccountSystem
+    flow ValidatedTransaction: ValidateTransaction -> TransactionQueue
+    flow QueuedTransaction: TransactionQueue -> ExecuteTransaction
+    flow TransactionResult: ExecuteTransaction -> RecordTransaction
+    flow BalanceUpdate: ExecuteTransaction -> AccountSystem
+    flow AuditRecord: RecordTransaction -> AuditLog
+}
+
+// Transaction ERD
+erd TransactionModel {
+    entity Transaction {
+        id: integer [pk]
+        transaction_id: string [unique]
+        account_id: integer [fk -> Account.id]
+        type: string
+        amount: decimal
+        currency: string
+        description: string
+        status: string
+        created_at: datetime
+        processed_at: datetime
+        reference: string [unique]
+    }
+
+    entity TransactionDetail {
+        id: integer [pk]
+        transaction_id: integer [fk -> Transaction.id]
+        field_name: string
+        field_value: string
+    }
+
+    entity Transfer {
+        id: integer [pk]
+        transaction_id: integer [fk -> Transaction.id]
+        from_account_id: integer [fk -> Account.id]
+        to_account_id: integer
+        to_bank_code: string
+        ...  // TBD - additional transfer details
+    }
+
+    entity AuditEntry {
+        id: integer [pk]
+        transaction_id: integer [fk -> Transaction.id]
+        action: string
+        actor: string
+        timestamp: datetime
+        details: string
+    }
+
+    relationship has_details: Transaction -1:n-> TransactionDetail
+    relationship has_transfer: Transaction -0..1:1-> Transfer
+    relationship has_audit: Transaction -1:n-> AuditEntry
+}
+
+// Transaction Data Dictionary
+datadict {
+    TransactionType = "deposit" | "withdrawal" | "transfer" | "payment" | "fee"
+
+    TransactionStatus = "pending" | "processing" | "completed" | "failed" | "reversed"
+
+    TransactionRequest = {
+        account_number: string [pattern: "[0-9]{10}"]
+        type: TransactionType
+        amount: decimal [min: 0.01]
+        currency: string [pattern: "[A-Z]{3}"]
+        description: string [optional, max: 255]
+        reference: string [optional]
+    }
+
+    TransactionResult = {
+        transaction_id: string
+        status: TransactionStatus
+        timestamp: datetime
+        balance_after: decimal
+        message: string [optional]
+    }
+
+    TransferRequest = {
+        from_account: string [pattern: "[0-9]{10}"]
+        to_account: string
+        to_bank_code: string [optional]
+        amount: decimal [min: 0.01]
+        currency: string [pattern: "[A-Z]{3}"]
+        purpose: string [optional]
+    }
+
+    // Placeholder for batch processing types
+    BatchTransaction = TBD
+}

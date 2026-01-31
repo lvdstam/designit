@@ -1,0 +1,171 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "DesignIt",
+    "scopeName": "source.designit",
+    "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#numbers" },
+        { "include": "#constants" },
+        { "include": "#keywords" },
+        { "include": "#types" },
+        { "include": "#constraints" },
+        { "include": "#operators" },
+        { "include": "#identifiers" }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.designit",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.designit",
+                    "begin": "/\\*",
+                    "end": "\\*/",
+                    "patterns": [
+                        {
+                            "name": "comment.block.designit",
+                            "match": "."
+                        }
+                    ]
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.designit",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.designit",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.single.designit",
+                    "begin": "'",
+                    "end": "'",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.designit",
+                            "match": "\\\\."
+                        }
+                    ]
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.decimal.designit",
+                    "match": "-?\\d+\\.\\d+"
+                },
+                {
+                    "name": "constant.numeric.integer.designit",
+                    "match": "-?\\d+"
+                }
+            ]
+        },
+        "constants": {
+            "patterns": [
+                {
+                    "name": "constant.language.boolean.designit",
+                    "match": "\\b(true|false)\\b"
+                },
+                {
+                    "name": "constant.language.placeholder.designit",
+                    "match": "\\b(TBD)\\b|\\.\\.\\."
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.diagram.designit",
+                    "match": "\\b(dfd|erd|std|structure|datadict)\\b"
+                },
+                {
+                    "name": "keyword.control.import.designit",
+                    "match": "\\b(import)\\b"
+                },
+                {
+                    "name": "keyword.other.dfd.designit",
+                    "match": "\\b(external|process|datastore|flow)\\b"
+                },
+                {
+                    "name": "keyword.other.erd.designit",
+                    "match": "\\b(entity|relationship)\\b"
+                },
+                {
+                    "name": "keyword.other.std.designit",
+                    "match": "\\b(state|transition|initial)\\b"
+                },
+                {
+                    "name": "keyword.other.structure.designit",
+                    "match": "\\b(module|calls|data_couple|control_couple)\\b"
+                },
+                {
+                    "name": "keyword.other.property.designit",
+                    "match": "\\b(description|inputs|outputs|trigger|guard)\\b"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "storage.type.primitive.designit",
+                    "match": "\\b(string|integer|decimal|boolean|datetime|date|time|binary)\\b"
+                }
+            ]
+        },
+        "constraints": {
+            "patterns": [
+                {
+                    "name": "keyword.other.constraint.designit",
+                    "match": "\\b(pk|fk|unique|optional|pattern|min|max)\\b"
+                },
+                {
+                    "name": "keyword.other.constraint.designit",
+                    "match": "\\b(not)\\s+(null)\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.arrow.designit",
+                    "match": "->"
+                },
+                {
+                    "name": "keyword.operator.cardinality.designit",
+                    "match": "-[01n](\\.\\.\\.[01n])?:[01n](\\.\\.\\.[01n])?->"
+                },
+                {
+                    "name": "keyword.operator.assignment.designit",
+                    "match": "="
+                },
+                {
+                    "name": "keyword.operator.union.designit",
+                    "match": "\\|"
+                }
+            ]
+        },
+        "identifiers": {
+            "patterns": [
+                {
+                    "name": "entity.name.type.designit",
+                    "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+                },
+                {
+                    "name": "variable.other.designit",
+                    "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+                }
+            ]
+        }
+    }
+}

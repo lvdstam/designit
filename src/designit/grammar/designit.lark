@@ -1,0 +1,260 @@
+// DesignIt DSL Grammar
+// A language for Yourdon-style design documents
+
+// Entry point - a document is a sequence of top-level declarations
+start: _NL* (declaration _NL*)* 
+
+// Top-level declarations
+declaration: import_decl
+           | dfd_decl
+           | erd_decl
+           | std_decl
+           | structure_decl
+           | datadict_decl
+
+// Import statement
+import_decl: IMPORT STRING
+
+// ============================================
+// Data Flow Diagram (DFD)
+// ============================================
+dfd_decl: DFD IDENTIFIER "{" _NL* dfd_body* "}"
+
+dfd_body: external_decl _NL*
+        | process_decl _NL*
+        | datastore_decl _NL*
+        | flow_decl _NL*
+
+external_decl: EXTERNAL IDENTIFIER block
+
+process_decl: PROCESS IDENTIFIER block
+
+datastore_decl: DATASTORE IDENTIFIER block
+
+flow_decl: FLOW IDENTIFIER ":" flow_endpoint "->" flow_endpoint properties?
+
+flow_endpoint: IDENTIFIER ("." IDENTIFIER)?
+
+// ============================================
+// Entity-Relationship Diagram (ERD)
+// ============================================
+erd_decl: ERD IDENTIFIER "{" _NL* erd_body* "}"
+
+erd_body: entity_decl _NL*
+        | relationship_decl _NL*
+
+entity_decl: ENTITY IDENTIFIER "{" _NL* entity_body* "}"
+
+entity_body: attribute_decl _NL*
+           | placeholder _NL*
+
+attribute_decl: identifier ":" type_expr attribute_constraints?
+
+attribute_constraints: "[" constraint ("," constraint)* "]"
+
+constraint: PK                        -> pk_constraint
+          | FK "->" IDENTIFIER "." IDENTIFIER  -> fk_constraint
+          | UNIQUE                    -> unique_constraint
+          | NOT NULL               -> not_null_constraint
+          | PATTERN ":" STRING       -> pattern_constraint
+
+relationship_decl: RELATIONSHIP IDENTIFIER ":" IDENTIFIER cardinality IDENTIFIER properties?
+
+cardinality: MINUS CARDINALITY_FULL ARROW
+
+// ============================================
+// State Transition Diagram (STD)
+// ============================================
+std_decl: STD IDENTIFIER "{" _NL* std_body* "}"
+
+std_body: state_decl _NL*
+        | transition_decl _NL*
+        | initial_state_decl _NL*
+
+initial_state_decl: INITIAL ":" IDENTIFIER
+
+state_decl: STATE IDENTIFIER block
+
+transition_decl: TRANSITION IDENTIFIER ":" IDENTIFIER "->" IDENTIFIER properties?
+
+// ============================================
+// Structure Chart
+// ============================================
+structure_decl: STRUCTURE IDENTIFIER "{" _NL* structure_body* "}"
+
+structure_body: module_decl _NL*
+
+module_decl: MODULE IDENTIFIER "{" _NL* module_body* "}"
+
+module_body: calls_decl _NL*
+           | data_couple_decl _NL*
+           | control_couple_decl _NL*
+           | property_decl _NL*
+           | placeholder _NL*
+
+calls_decl: CALLS ":" "[" identifier_list "]"
+
+data_couple_decl: DATA_COUPLE ":" IDENTIFIER
+
+control_couple_decl: CONTROL_COUPLE ":" IDENTIFIER
+
+// ============================================
+// Data Dictionary
+// ============================================
+datadict_decl: DATADICT "{" _NL* datadict_body* "}"
+
+datadict_body: datadef_decl _NL*
+
+datadef_decl: IDENTIFIER "=" data_definition
+
+data_definition: struct_def
+               | union_def
+               | array_def
+               | simple_type_ref
+               | placeholder
+
+simple_type_ref: base_type
+               | IDENTIFIER
+
+// Union must start with a string OR an identifier/type, followed by | alternatives
+union_def: union_first ("|" union_alt)+
+
+union_first: STRING | base_type | IDENTIFIER
+union_alt: STRING | base_type | IDENTIFIER
+
+struct_def: "{" _NL* struct_field* "}"
+
+struct_field: identifier ":" type_expr field_constraints? _NL*
+
+field_constraints: "[" field_constraint ("," field_constraint)* "]"
+
+field_constraint: PATTERN ":" STRING   -> pattern_constraint
+                | OPTIONAL             -> optional_constraint
+                | MIN ":" NUMBER       -> min_constraint
+                | MAX ":" NUMBER       -> max_constraint
+
+array_def: array_element_type "[" "]" array_constraints?
+
+array_element_type: base_type | IDENTIFIER
+
+array_constraints: "[" array_constraint ("," array_constraint)* "]"
+
+array_constraint: MIN ":" NUMBER    -> array_min_constraint
+                | MAX ":" NUMBER    -> array_max_constraint
+
+// ============================================
+// Common elements
+// ============================================
+block: "{" _NL* block_body* "}"
+     | placeholder
+
+block_body: property_decl _NL*
+          | placeholder _NL*
+
+property_decl: identifier ":" property_value
+
+property_value: STRING
+              | NUMBER
+              | BOOLEAN
+              | "[" value_list? "]"
+              | IDENTIFIER
+
+value_list: property_value ("," property_value)*
+
+properties: "{" _NL* (property_decl _NL*)* "}"
+
+// Type expressions
+type_expr: base_type
+         | IDENTIFIER
+
+base_type: STRING_TYPE -> string_type
+         | INTEGER_TYPE -> integer_type
+         | DECIMAL_TYPE -> decimal_type
+         | BOOLEAN_TYPE -> boolean_type
+         | DATETIME_TYPE -> datetime_type
+         | DATE_TYPE -> date_type
+         | TIME_TYPE -> time_type
+         | BINARY_TYPE -> binary_type
+
+// Identifier list
+identifier_list: IDENTIFIER ("," IDENTIFIER)*
+
+// Placeholder for TBD content
+placeholder: "..." | "TBD"
+
+// ============================================
+// Identifier that can also be a keyword
+// ============================================
+// Allow keywords to be used as identifiers in attribute contexts
+// Note: We list the keyword tokens that Lark auto-generates from quoted strings
+identifier: IDENTIFIER
+          | STATE | PROCESS | EXTERNAL | DATASTORE | FLOW
+          | ENTITY | RELATIONSHIP | TRANSITION | MODULE | STRUCTURE
+          | DFD | ERD | STD | DATADICT | IMPORT | INITIAL
+          | CALLS | DATA_COUPLE | CONTROL_COUPLE
+          | PK | FK | UNIQUE | NOT | NULL | PATTERN | OPTIONAL | MIN | MAX
+          | STRING_TYPE | INTEGER_TYPE | DECIMAL_TYPE | BOOLEAN_TYPE
+          | DATETIME_TYPE | DATE_TYPE | TIME_TYPE | BINARY_TYPE
+
+// Explicit keyword terminals (match before IDENTIFIER)
+STATE: "state"
+PROCESS: "process"
+EXTERNAL: "external"
+DATASTORE: "datastore"
+FLOW: "flow"
+ENTITY: "entity"
+RELATIONSHIP: "relationship"
+TRANSITION: "transition"
+MODULE: "module"
+STRUCTURE: "structure"
+DFD: "dfd"
+ERD: "erd"
+STD: "std"
+DATADICT: "datadict"
+IMPORT: "import"
+INITIAL: "initial"
+CALLS: "calls"
+DATA_COUPLE: "data_couple"
+CONTROL_COUPLE: "control_couple"
+PK: "pk"
+FK: "fk"
+UNIQUE: "unique"
+NOT: "not"
+NULL: "null"
+PATTERN: "pattern"
+OPTIONAL: "optional"
+MIN: "min"
+MAX: "max"
+STRING_TYPE: "string"
+INTEGER_TYPE: "integer"
+DECIMAL_TYPE: "decimal"
+BOOLEAN_TYPE: "boolean"
+DATETIME_TYPE: "datetime"
+DATE_TYPE: "date"
+TIME_TYPE: "time"
+BINARY_TYPE: "binary"
+
+// ============================================
+// Terminals
+// ============================================
+// High-priority terminals (order matters for basic lexer)
+// ARROW must have higher priority than MINUS to match "->" before "-"
+// CARDINALITY_FULL must have higher priority than NUMBER to match "1:n" before "1"
+ARROW.3: "->"
+CARDINALITY_FULL.3: /[01n](\.\.[01n])?:[01n](\.\.[01n])?/
+MINUS.2: "-"
+
+IDENTIFIER: /[a-zA-Z_][a-zA-Z0-9_]*/
+STRING: /\"[^\"]*\"/ | /\'[^\']*\'/
+NUMBER: /\-?[0-9]+(\.[0-9]+)?/
+BOOLEAN: "true" | "false"
+
+// Comments
+COMMENT: "//" /[^\n]/*
+BLOCK_COMMENT: "/*" /(.|\n)*?/ "*/"
+
+// Whitespace handling
+_NL: /(\r?\n[\t ]*)+/
+%ignore /[\t \f]+/
+%ignore COMMENT
+%ignore BLOCK_COMMENT
