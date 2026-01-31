@@ -142,6 +142,7 @@ KEYWORDS = {
     "dfd": "Define a Data Flow Diagram",
     "erd": "Define an Entity-Relationship Diagram",
     "std": "Define a State Transition Diagram",
+    "scd": "Define a System Context Diagram",
     "structure": "Define a Structure Chart",
     "datadict": "Define a Data Dictionary",
     # DFD elements
@@ -149,6 +150,8 @@ KEYWORDS = {
     "process": "Define a process",
     "datastore": "Define a data store",
     "flow": "Define a data flow",
+    # SCD elements
+    "system": "Define the system being modeled (SCD)",
     # ERD elements
     "entity": "Define an entity",
     "relationship": "Define a relationship",
@@ -231,6 +234,22 @@ def completion(params: lsp.CompletionParams) -> lsp.CompletionList:
 # ============================================
 
 HOVER_DOCS = {
+    "scd": """# System Context Diagram (SCD)
+
+An SCD shows the system boundary and its interactions with external entities.
+
+```designit
+scd OrderSystem {
+    system OrderService { description: "Main order processing system" }
+    external Customer { description: "End user placing orders" }
+    external PaymentGateway { description: "External payment processor" }
+    datastore InventoryDB { description: "Product inventory database" }
+    flow PlaceOrder: Customer -> OrderService
+    flow ProcessPayment: OrderService <-> PaymentGateway
+    flow CheckStock: OrderService -> InventoryDB
+}
+```
+""",
     "dfd": """# Data Flow Diagram (DFD)
 
 A DFD shows the flow of data through a system.
@@ -453,6 +472,47 @@ def document_symbol(params: lsp.DocumentSymbolParams) -> list[lsp.DocumentSymbol
         symbols.append(
             lsp.DocumentSymbol(
                 name=f"STD: {name}",
+                kind=lsp.SymbolKind.Module,
+                range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+                selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+                children=children,
+            )
+        )
+
+    # Add SCDs
+    for name, scd in design.scds.items():
+        children = []
+        if scd.system:
+            children.append(
+                lsp.DocumentSymbol(
+                    name=scd.system.name,
+                    kind=lsp.SymbolKind.Class,
+                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+                )
+            )
+        for ext_name in scd.externals:
+            children.append(
+                lsp.DocumentSymbol(
+                    name=ext_name,
+                    kind=lsp.SymbolKind.Interface,
+                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+                )
+            )
+        for ds_name in scd.datastores:
+            children.append(
+                lsp.DocumentSymbol(
+                    name=ds_name,
+                    kind=lsp.SymbolKind.Variable,
+                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+                )
+            )
+
+        symbols.append(
+            lsp.DocumentSymbol(
+                name=f"SCD: {name}",
                 kind=lsp.SymbolKind.Module,
                 range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
                 selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),

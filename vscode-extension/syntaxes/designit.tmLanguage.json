@@ -87,7 +87,7 @@
             "patterns": [
                 {
                     "name": "keyword.control.diagram.designit",
-                    "match": "\\b(dfd|erd|std|structure|datadict)\\b"
+                    "match": "\\b(dfd|erd|std|scd|structure|datadict)\\b"
                 },
                 {
                     "name": "keyword.control.import.designit",
@@ -96,6 +96,10 @@
                 {
                     "name": "keyword.other.dfd.designit",
                     "match": "\\b(external|process|datastore|flow)\\b"
+                },
+                {
+                    "name": "keyword.other.scd.designit",
+                    "match": "\\b(system)\\b"
                 },
                 {
                     "name": "keyword.other.erd.designit",
