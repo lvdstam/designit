@@ -29,19 +29,24 @@ scd TestSCD {
     def test_dfd_flow_not_in_datadict_produces_diagnostic(self) -> None:
         """DFD flow not in data dictionary should produce error diagnostic."""
         source = """
-dfd TestDFD {
+scd Context {
+    system Sys {}
     external User {}
+    flow UndefinedFlow: User -> Sys
+}
+dfd TestDFD {
+    refines: Context.Sys
     process Handle {}
-    flow UndefinedFlow: User -> Handle
+    flow UndefinedFlow: -> Handle
 }
 """
         doc = TextDocument(uri="file:///test.dit", source=source)
         diagnostics = _get_diagnostics(doc)
 
         errors = [d for d in diagnostics if d.severity == lsp.DiagnosticSeverity.Error]
-        assert len(errors) == 1
-        assert "UndefinedFlow" in errors[0].message
-        assert "data dictionary" in errors[0].message.lower()
+        assert len(errors) >= 1
+        assert any("UndefinedFlow" in e.message for e in errors)
+        assert any("data dictionary" in e.message.lower() for e in errors)
 
     def test_flow_diagnostic_has_correct_line_number(self) -> None:
         """Flow validation diagnostic should point to the flow's line."""
@@ -92,20 +97,26 @@ dfd TestDFD {
 
     def test_dfd_flow_diagnostic_has_correct_line_number(self) -> None:
         """DFD flow validation diagnostic should point to the flow's line."""
-        source = """dfd TestDFD {
+        source = """scd Context {
+    system Sys {}
     external User {}
+    flow UndefinedFlow: User -> Sys
+}
+dfd TestDFD {
+    refines: Context.Sys
     process Handle {}
-    flow UndefinedFlow: User -> Handle
+    flow UndefinedFlow: -> Handle
 }
 """
-        # The flow is on line 4 (1-based), so LSP line should be 3 (0-based)
+        # The DFD flow is on line 9 (1-based), so LSP line should be 8 (0-based)
         doc = TextDocument(uri="file:///test.dit", source=source)
         diagnostics = _get_diagnostics(doc)
 
         errors = [d for d in diagnostics if d.severity == lsp.DiagnosticSeverity.Error]
-        assert len(errors) == 1
-        assert errors[0].range.start.line == 3, (
-            f"Expected line 3 (0-based), got {errors[0].range.start.line}"
+        dfd_errors = [e for e in errors if "DFD" in e.message]
+        assert len(dfd_errors) >= 1
+        assert dfd_errors[0].range.start.line == 8, (
+            f"Expected line 8 (0-based), got {dfd_errors[0].range.start.line}"
         )
 
     def test_valid_document_no_error_diagnostics(self) -> None:

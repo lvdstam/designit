@@ -196,6 +196,50 @@ The DSL supports five diagram types:
 - Circular imports are detected and reported as errors
 - Relative paths resolved from the importing file's directory
 
+### Element Identity
+
+Elements across diagrams are considered identical only when they:
+1. Have the same name
+2. Originate from the same source file
+3. Are defined on the same line
+
+This ensures that when multiple diagrams reference an element (e.g., an external entity),
+they all reference the same definition from a shared import, rather than independent
+definitions that happen to share a name. No duplicate element names are allowed across
+the import tree.
+
+### Datastore Model
+
+Datastores follow a two-level abstraction model:
+
+1. **SCD Datastores** (Boundary Elements):
+   - Defined at the SCD level alongside externals
+   - Represent persistent storage at the system boundary
+   - Accessible to all descendant DFDs via boundary flows
+   - Flows: `System -> Datastore`, `Datastore -> System`, or `System <-> Datastore`
+
+2. **DFD Local Datastores**:
+   - Defined within a specific DFD
+   - Internal to that abstraction level
+   - Accessible to child DFDs that refine processes in this DFD
+   - Name must not conflict with any element in the parent tree
+   - Flows to local datastores are internal flows (both endpoints specified)
+
+### DFD Hierarchical Decomposition
+
+DFDs follow a strict hierarchical decomposition model:
+
+1. **Every DFD must refine something** - either a `system` in an SCD or a `process` in a parent DFD
+2. **DFDs contain no external entities** - externals exist only at the SCD level
+3. **Boundary flows** have a single endpoint (the other end is implicit - the boundary):
+   - Inbound: `flow Name: -> Process` (from parent's external/datastore)
+   - Outbound: `flow Name: Process ->` (to parent's external/datastore)
+4. **Internal flows** have both endpoints within the DFD
+5. **Flow coverage rules**:
+   - Inbound flows must be handled by exactly ONE process
+   - Outbound flows may be handled by ZERO or more processes
+6. **Bidirectional parent flows** decompose into separate inbound/outbound flows in child DFD
+
 ### Validation Severity Levels
 
 - **ERROR** - Invalid references, missing required elements

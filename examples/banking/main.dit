@@ -43,44 +43,32 @@ datadict {
         end_date: date
     }
 
-    // Transfer flows
-    TransferRequest = {
+    // Transfer flows (internal)
+    InternalTransfer = {
         from_account: string
         to_account: string
         amount: decimal
         description: string [optional]
     }
 
-    ExternalTransfer = {
-        from_account: string
-        to_account: string
-        to_bank_code: string
-        amount: decimal
-        currency: string
-    }
-
     // Account flows
-    AccountUpdate = {
+    AccountUpdateInternal = {
         account_id: string
         field: string
         value: string
     }
+
+    // Session flows
+    SessionData = {
+        session_id: string
+        user_id: string
+        created_at: datetime
+    }
 }
 
-// Main Data Flow Diagram
-dfd BankingSystem {
-    // External Entities
-    external Customer {
-        description: "Bank customer using the system"
-    }
-
-    external BankTeller {
-        description: "Bank employee processing transactions"
-    }
-
-    external ExternalBank {
-        description: "External banking system for transfers"
-    }
+// Main Data Flow Diagram - refines the BankingSystem from context
+dfd BankingSystemLevel0 {
+    refines: BankingSystemContext.BankingSystem
 
     // Processes
     process AuthenticateUser {
@@ -92,7 +80,7 @@ dfd BankingSystem {
     process ProcessTransaction {
         description: "Handles all transaction types"
         inputs: [TransactionRequest]
-        outputs: [TransactionResult, AccountUpdate]
+        outputs: [TransactionConfirmation, AccountUpdateInternal]
     }
 
     process GenerateReport {
@@ -102,36 +90,46 @@ dfd BankingSystem {
     }
 
     process HandleTransfer {
-        // Placeholder - details TBD
-        ...
+        description: "Handles external bank transfers"
     }
 
-    // Data Stores
-    datastore CustomerDB {
-        description: "Customer account information"
+    process HandleTellerRequest {
+        description: "Processes teller queries"
     }
 
-    datastore TransactionLog {
-        description: "Audit trail of all transactions"
+    process HandleCompliance {
+        description: "Handles regulatory requests and reports"
     }
 
+    // Local Data Stores (internal to this level)
     datastore SessionStore {
         description: "Active user sessions"
     }
 
-    // Data Flows
-    flow Credentials: Customer -> AuthenticateUser
-    flow AuthToken: AuthenticateUser -> Customer
-    flow CustomerLookup: AuthenticateUser -> CustomerDB
-    flow TransactionRequest: Customer -> ProcessTransaction
-    flow TransactionResult: ProcessTransaction -> Customer
-    flow AccountUpdate: ProcessTransaction -> CustomerDB
-    flow TransactionRecord: ProcessTransaction -> TransactionLog
-    flow ReportRequest: Customer -> GenerateReport
-    flow Report: GenerateReport -> Customer
-    flow HistoryQuery: GenerateReport -> TransactionLog
-    flow TransferRequest: BankTeller -> HandleTransfer
-    flow ExternalTransfer: HandleTransfer -> ExternalBank
+    // Boundary Flows - handle inbound flows from parent SCD
+    flow LoginRequest: -> AuthenticateUser
+    flow TransactionRequest: -> ProcessTransaction
+    flow TellerQuery: -> HandleTellerRequest
+    flow AuditRequest: -> HandleCompliance
+    flow TransferData: -> HandleTransfer
+
+    // Boundary Flows - outbound flows to parent SCD
+    flow AccountInfo: AuthenticateUser ->
+    flow TransactionConfirmation: ProcessTransaction ->
+    flow CustomerData: HandleTellerRequest ->
+    flow ComplianceReport: HandleCompliance ->
+    // Note: TransferData is bidirectional, so we handle inbound above and outbound implicitly via HandleTransfer
+
+    // Boundary Flows - to SCD datastores
+    flow CustomerLookup: AuthenticateUser ->
+    flow CustomerUpdate: ProcessTransaction ->
+    flow TransactionRecord: ProcessTransaction ->
+    flow AuditQuery: HandleCompliance ->
+
+    // Internal Flows
+    flow SessionData: AuthenticateUser -> SessionStore
+    flow InternalTransfer: ProcessTransaction -> HandleTransfer
+    flow HistoryQuery: GenerateReport -> ProcessTransaction
 }
 
 // State Transition Diagram for Transaction Processing

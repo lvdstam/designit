@@ -31,6 +31,7 @@ from designit.parser.ast_nodes import (
     PlaceholderNode,
     ProcessNode,
     PropertyNode,
+    RefinesNode,
     RelationshipNode,
     SCDFlowNode,
     SCDNode,
@@ -149,6 +150,9 @@ class DesignItTransformer(Transformer[Token, Any]):
         return str(token)
 
     def INITIAL(self, token: Token) -> str:
+        return str(token)
+
+    def REFINES(self, token: Token) -> str:
         return str(token)
 
     def CALLS(self, token: Token) -> str:
@@ -324,17 +328,25 @@ class DesignItTransformer(Transformer[Token, Any]):
     # DFD Elements
     # ============================================
 
+    def qualified_ref(self, items: list[Any]) -> tuple[str, str]:
+        """Handle qualified reference: Diagram.Element -> (diagram_name, element_name)."""
+        return (items[0], items[1])
+
+    @v_args(meta=True)
+    def refines_decl(self, meta: Any, items: list[Any]) -> RefinesNode:
+        """Handle refinement declaration: refines: Diagram.Element."""
+        # items: [REFINES, (diagram_name, element_name)]
+        diagram_name, element_name = items[1]
+        return RefinesNode(
+            diagram_name=diagram_name,
+            element_name=element_name,
+            location=_get_location(meta),
+        )
+
     def flow_endpoint(self, items: list[Any]) -> FlowEndpointNode:
         entity = items[0]
         port = items[1] if len(items) > 1 else None
         return FlowEndpointNode(entity=entity, port=port)
-
-    @v_args(meta=True)
-    def external_decl(self, meta: Any, items: list[Any]) -> ExternalNode:
-        # items: [EXTERNAL, IDENTIFIER, block] - skip the keyword
-        name = items[1]
-        body = items[2] if len(items) > 2 else BlockNode()
-        return ExternalNode(name=name, body=body, location=_get_location(meta))
 
     @v_args(meta=True)
     def process_decl(self, meta: Any, items: list[Any]) -> ProcessNode:
@@ -351,8 +363,9 @@ class DesignItTransformer(Transformer[Token, Any]):
         return DatastoreNode(name=name, body=body, location=_get_location(meta))
 
     @v_args(meta=True)
-    def flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
-        # items: [FLOW, IDENTIFIER, flow_endpoint, flow_endpoint, properties?] - skip the keyword
+    def internal_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
+        """Handle internal flow: flow Name: Source -> Target."""
+        # items: [FLOW, IDENTIFIER, flow_endpoint, flow_endpoint, properties?]
         name = items[1]
         source = items[2]
         target = items[3]
@@ -365,20 +378,52 @@ class DesignItTransformer(Transformer[Token, Any]):
             location=_get_location(meta),
         )
 
+    @v_args(meta=True)
+    def inbound_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
+        """Handle boundary inbound flow: flow Name: -> Target."""
+        # items: [FLOW, IDENTIFIER, flow_endpoint, properties?]
+        name = items[1]
+        target = items[2]
+        properties = items[3] if len(items) > 3 else []
+        return FlowNode(
+            name=name,
+            source=None,
+            target=target,
+            properties=properties,
+            location=_get_location(meta),
+        )
+
+    @v_args(meta=True)
+    def outbound_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
+        """Handle boundary outbound flow: flow Name: Source ->."""
+        # items: [FLOW, IDENTIFIER, flow_endpoint, properties?]
+        name = items[1]
+        source = items[2]
+        properties = items[3] if len(items) > 3 else []
+        return FlowNode(
+            name=name,
+            source=source,
+            target=None,
+            properties=properties,
+            location=_get_location(meta),
+        )
+
     def dfd_body(self, items: list[Any]) -> Any:
         return items[0] if items else None
 
-    def dfd_decl(self, items: list[Any]) -> DFDNode:
-        # items: [DFD, IDENTIFIER, ...elements] - skip the keyword
+    @v_args(meta=True)
+    def dfd_decl(self, meta: Any, items: list[Any]) -> DFDNode:
+        """Handle DFD declaration with required refines."""
+        # items: [DFD, IDENTIFIER, RefinesNode, ...elements]
         name = items[1]
-        externals = []
-        processes = []
-        datastores = []
-        flows = []
+        refines = None
+        processes: list[ProcessNode] = []
+        datastores: list[DatastoreNode] = []
+        flows: list[FlowNode] = []
 
         for item in items[2:]:
-            if isinstance(item, ExternalNode):
-                externals.append(item)
+            if isinstance(item, RefinesNode):
+                refines = item
             elif isinstance(item, ProcessNode):
                 processes.append(item)
             elif isinstance(item, DatastoreNode):
@@ -388,10 +433,11 @@ class DesignItTransformer(Transformer[Token, Any]):
 
         return DFDNode(
             name=name,
-            externals=externals,
+            refines=refines,
             processes=processes,
             datastores=datastores,
             flows=flows,
+            location=_get_location(meta),
         )
 
     # ============================================

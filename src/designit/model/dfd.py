@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from designit.model.base import BaseElement, ElementReference
@@ -26,31 +28,54 @@ class Datastore(BaseElement):
     pass
 
 
+class RefinesRef(BaseModel):
+    """Reference to the element this DFD refines."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diagram_name: str
+    element_name: str
+    line: int | None = None
+
+
 class DataFlow(BaseModel):
-    """A data flow between DFD elements."""
+    """A data flow between DFD elements.
+
+    For internal flows, both source and target are set.
+    For boundary flows:
+      - Inbound: source is None, target is set
+      - Outbound: source is set, target is None
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    source: ElementReference
-    target: ElementReference
+    source: ElementReference | None = None
+    target: ElementReference | None = None
+    flow_type: Literal["internal", "inbound", "outbound"] = "internal"
     description: str | None = None
     source_file: str | None = None
     line: int | None = None
 
 
 class DFDModel(BaseModel):
-    """A Data Flow Diagram model."""
+    """A Data Flow Diagram model.
 
-    model_config = ConfigDict(extra="forbid")
+    DFDs must refine a system (from SCD) or a process (from parent DFD).
+    DFDs contain NO external entities - externals exist only at the SCD level.
+    """
+
+    model_config = ConfigDict(extra="allow")  # Allow extra attributes like _inbound_flow_handlers
 
     name: str
     description: str | None = None
-    externals: dict[str, ExternalEntity] = Field(default_factory=dict)
+    refines: RefinesRef | None = None
+    externals: dict[str, ExternalEntity] = Field(default_factory=dict)  # Kept for backward compat
     processes: dict[str, Process] = Field(default_factory=dict)
     datastores: dict[str, Datastore] = Field(default_factory=dict)
     flows: dict[str, DataFlow] = Field(default_factory=dict)
     source_file: str | None = None
+    line: int | None = None
 
     def get_element(self, name: str) -> ExternalEntity | Process | Datastore | None:
         """Get an element by name from any category."""

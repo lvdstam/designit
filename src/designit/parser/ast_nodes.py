@@ -83,6 +83,13 @@ class FlowEndpointNode(ASTNode):
     port: str | None = None
 
 
+class RefinesNode(ASTNode):
+    """A refinement declaration referencing Diagram.Element."""
+
+    diagram_name: str
+    element_name: str
+
+
 class ExternalNode(ASTNode):
     """An external entity in a DFD."""
 
@@ -105,19 +112,32 @@ class DatastoreNode(ASTNode):
 
 
 class FlowNode(ASTNode):
-    """A data flow in a DFD."""
+    """A data flow in a DFD.
+
+    For internal flows, both source and target are set.
+    For boundary flows:
+      - Inbound: source is None, target is set
+      - Outbound: source is set, target is None
+    """
 
     name: str
-    source: FlowEndpointNode
-    target: FlowEndpointNode
+    source: FlowEndpointNode | None = None
+    target: FlowEndpointNode | None = None
     properties: list[PropertyNode] = Field(default_factory=list)
 
 
 class DFDNode(ASTNode):
-    """A Data Flow Diagram declaration."""
+    """A Data Flow Diagram declaration.
+
+    DFDs must refine a system (from SCD) or a process (from parent DFD).
+    DFDs contain NO external entities - externals exist only at the SCD level.
+    """
 
     name: str
-    externals: list[ExternalNode] = Field(default_factory=list)
+    refines: RefinesNode | None = None
+    externals: list[ExternalNode] = Field(
+        default_factory=list
+    )  # Kept for backward compat but should be empty
     processes: list[ProcessNode] = Field(default_factory=list)
     datastores: list[DatastoreNode] = Field(default_factory=list)
     flows: list[FlowNode] = Field(default_factory=list)

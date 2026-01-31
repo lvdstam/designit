@@ -600,6 +600,132 @@ All placeholders shall be reported as informational messages.
 
 ---
 
+### 2.2.1 DFD Hierarchical Decomposition
+
+#### REQ-SEM-080: DFD Refinement Declaration [TODO]
+Every DFD shall declare what parent element it refines using the `refines` keyword.
+
+**Acceptance Criteria:**
+- Syntax: `dfd Name { refines: DiagramName.ElementName ... }`
+- Parent element must be either a `system` in an SCD or a `process` in another DFD
+- ERROR (parse-time) if DFD does not have a `refines` declaration
+- `refines` declaration must appear at the start of the DFD body
+
+**Implementation:**
+- Grammar: `src/designit/grammar/designit.lark`
+- AST: `src/designit/parser/ast_nodes.py`
+- Parser: `src/designit/parser/parser.py`
+
+---
+
+#### REQ-SEM-081: Refinement Parent Resolution [TODO]
+The parent reference in a `refines` declaration shall be resolved and validated.
+
+**Acceptance Criteria:**
+- ERROR if referenced diagram does not exist
+- ERROR if referenced element does not exist in diagram
+- ERROR if element type is not refinable (only `system` and `process` are refinable)
+- Resolution works across imports
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-082: Refinement Inbound Flow Coverage [TODO]
+Each inbound flow to the parent element must be handled by exactly one process in the child DFD.
+
+**Acceptance Criteria:**
+- ERROR if an inbound parent flow is not handled by any process
+- ERROR if an inbound parent flow is handled by multiple processes
+- Flow matching is by name
+- Inbound boundary flow syntax: `flow Name: -> ProcessName`
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-083: Refinement Outbound Flow Coverage [TODO]
+Each outbound flow from the parent element may be handled by zero or more processes in the child DFD.
+
+**Acceptance Criteria:**
+- Outbound flows MAY originate from zero, one, or multiple processes (all valid)
+- No ERROR for unused outbound flows
+- Flow matching is by name
+- Outbound boundary flow syntax: `flow Name: ProcessName ->`
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-084: DFD Boundary Flow Syntax [TODO]
+DFDs shall support boundary flows with a single endpoint.
+
+**Acceptance Criteria:**
+- Inbound boundary flow: `flow Name: -> Endpoint`
+- Outbound boundary flow: `flow Name: Endpoint ->`
+- Endpoint must be a process or local datastore within the DFD
+- Boundary flow name must match a flow in the parent diagram
+- Flow direction must be consistent with parent (inbound in parent = inbound in child)
+- Bidirectional parent flows can be decomposed into separate inbound and outbound boundary flows
+
+**Implementation:**
+- Grammar: `src/designit/grammar/designit.lark`
+- AST: `src/designit/parser/ast_nodes.py`
+- Validator: `src/designit/semantic/validator.py`
+
+---
+
+#### REQ-SEM-085: DFD Local Datastores [TODO]
+DFDs may declare local datastores that are internal to that abstraction level.
+
+**Acceptance Criteria:**
+- Local datastore syntax: `datastore Name { ... }`
+- Local datastore name must not conflict with any element in the parent tree
+- Local datastores are accessible to child DFDs that refine processes in this DFD
+- Flows to/from local datastores are internal flows (both endpoints specified)
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-086: DFD Datastore Inheritance [TODO]
+Child DFDs can reference datastores from the entire parent tree via boundary flows.
+
+**Acceptance Criteria:**
+- SCD datastores are accessible as boundary elements to all descendant DFDs
+- Ancestor DFD local datastores are accessible to descendant DFDs
+- Access is via boundary flow syntax (datastore not declared in child, just referenced in flow)
+- Flow name must match a flow in an ancestor that connects to that datastore
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-087: No Duplicate Element Names [TODO]
+Element names must be unique across the entire import tree.
+
+**Acceptance Criteria:**
+- ERROR if two elements share the same name in the merged document
+- Applies to: systems, externals, datastores, processes
+- Prevents ambiguity when referencing elements across diagrams
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_unique_names()`
+
+---
+
+#### REQ-SEM-088: DFD Contains No External Entities [TODO]
+DFDs shall not declare external entities.
+
+**Acceptance Criteria:**
+- ERROR (parse-time) if a DFD contains an `external` declaration
+- External entities exist only at the SCD level
+- DFD boundary flows implicitly connect to parent's externals
+
+**Implementation:**
+- Grammar: `src/designit/grammar/designit.lark` (remove external_decl from dfd_body)
+
+---
+
 ### 2.3 Import Resolution
 
 #### REQ-SEM-100: Import Path Resolution [DONE]

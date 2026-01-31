@@ -34,40 +34,47 @@ class TestDFDParsing:
     """Tests for DFD parsing."""
 
     def test_simple_dfd(self) -> None:
-        """Parse a simple DFD."""
+        """Parse a simple DFD with refines declaration."""
         source = """
-        dfd TestSystem {
-            external User {
-                description: "System user"
-            }
+        scd Context {
+            system TestSystem {}
+            external User {}
+            datastore Database {}
+            flow Request: User -> TestSystem
+            flow Data: TestSystem -> Database
+        }
+        dfd TestDFD {
+            refines: Context.TestSystem
             process HandleRequest {
                 description: "Handles user requests"
             }
-            datastore Database {
-                description: "Main database"
-            }
-            flow Request: User -> HandleRequest
-            flow Data: HandleRequest -> Database
+            datastore LocalCache {}
+            flow Request: -> HandleRequest
+            flow Data: HandleRequest ->
+            flow CacheWrite: HandleRequest -> LocalCache
         }
         """
         doc = parse_string(source)
         assert len(doc.dfds) == 1
         dfd = doc.dfds[0]
-        assert dfd.name == "TestSystem"
-        assert len(dfd.externals) == 1
+        assert dfd.name == "TestDFD"
+        assert dfd.refines is not None
+        assert dfd.refines.diagram_name == "Context"
+        assert dfd.refines.element_name == "TestSystem"
         assert len(dfd.processes) == 1
         assert len(dfd.datastores) == 1
-        assert len(dfd.flows) == 2
+        assert len(dfd.flows) == 3
 
     def test_dfd_with_placeholder(self) -> None:
         """Parse DFD with placeholder elements."""
         source = """
+        scd Ctx {
+            system Sys {}
+        }
         dfd System {
+            refines: Ctx.Sys
             process ToBeImplemented {
                 ...
-            }
-            external User {
-                TBD
             }
         }
         """
@@ -337,26 +344,28 @@ class TestNodeLocation:
     # ============================================
 
     def test_external_node_has_location(self) -> None:
-        """ExternalNode should have source location."""
-        source = """dfd Test {
+        """ExternalNode in SCD should have source location (DFDs no longer have externals)."""
+        source = """scd Test {
+    system S {}
     external MyExternal {}
-    process P {}
-    flow F: MyExternal -> P
+    flow F: MyExternal -> S
 }
 """
         doc = parse_string(source)
-        assert len(doc.dfds) == 1
-        assert len(doc.dfds[0].externals) == 1
-        ext = doc.dfds[0].externals[0]
+        assert len(doc.scds) == 1
+        assert len(doc.scds[0].externals) == 1
+        ext = doc.scds[0].externals[0]
         assert ext.location is not None, "External should have location set"
-        assert ext.location.line == 2, f"Expected line 2, got {ext.location.line}"
+        assert ext.location.line == 3, f"Expected line 3, got {ext.location.line}"
 
     def test_process_node_has_location(self) -> None:
         """ProcessNode should have source location."""
-        source = """dfd Test {
-    external E {}
+        source = """scd Ctx {
+    system S {}
+}
+dfd Test {
+    refines: Ctx.S
     process MyProcess {}
-    flow F: E -> MyProcess
 }
 """
         doc = parse_string(source)
@@ -364,14 +373,16 @@ class TestNodeLocation:
         assert len(doc.dfds[0].processes) == 1
         proc = doc.dfds[0].processes[0]
         assert proc.location is not None, "Process should have location set"
-        assert proc.location.line == 3, f"Expected line 3, got {proc.location.line}"
+        assert proc.location.line == 6, f"Expected line 6, got {proc.location.line}"
 
     def test_datastore_node_has_location(self) -> None:
         """DatastoreNode should have source location."""
-        source = """dfd Test {
-    process P {}
+        source = """scd Ctx {
+    system S {}
+}
+dfd Test {
+    refines: Ctx.S
     datastore MyDatastore {}
-    flow F: P -> MyDatastore
 }
 """
         doc = parse_string(source)
@@ -379,7 +390,7 @@ class TestNodeLocation:
         assert len(doc.dfds[0].datastores) == 1
         ds = doc.dfds[0].datastores[0]
         assert ds.location is not None, "Datastore should have location set"
-        assert ds.location.line == 3, f"Expected line 3, got {ds.location.line}"
+        assert ds.location.line == 6, f"Expected line 6, got {ds.location.line}"
 
     # ============================================
     # SCD Elements
@@ -547,19 +558,24 @@ class TestFlowLocation:
 
     def test_dfd_flow_has_location(self) -> None:
         """DFD flow nodes should have source location."""
-        source = """dfd Test {
+        source = """scd Ctx {
+    system S {}
     external A {}
+    flow F: A -> S
+}
+dfd Test {
+    refines: Ctx.S
     process B {}
-    flow MyFlow: A -> B
+    flow InboundF: -> B
+    flow MyFlow: B ->
 }
 """
         doc = parse_string(source)
         assert len(doc.dfds) == 1
-        assert len(doc.dfds[0].flows) == 1
-        flow = doc.dfds[0].flows[0]
-        # This test will FAIL until we fix the parser
+        assert len(doc.dfds[0].flows) == 2
+        flow = doc.dfds[0].flows[1]  # MyFlow
         assert flow.location is not None, "Flow should have location set"
-        assert flow.location.line == 4, f"Expected line 4, got {flow.location.line}"
+        assert flow.location.line == 10, f"Expected line 10, got {flow.location.line}"
 
     def test_scd_flow_has_location(self) -> None:
         """SCD flow nodes should have source location."""
@@ -613,3 +629,378 @@ class TestFlowLocation:
         assert flow.location is not None
         assert flow.location.column is not None
         assert flow.location.column > 0
+
+
+class TestRefinesParsing:
+    """Tests for DFD refines declaration parsing.
+
+    REQ-SEM-080: Every DFD shall declare what parent element it refines.
+    REQ-SEM-084: DFDs shall support boundary flows with a single endpoint.
+    REQ-SEM-088: DFDs shall not declare external entities.
+    """
+
+    def test_dfd_with_refines_scd_parses(self) -> None:
+        """DFD refining an SCD system should parse correctly."""
+        source = """
+        scd OrderContext {
+            system OrderSystem {}
+            external Customer {}
+            flow OrderRequest: Customer -> OrderSystem
+        }
+
+        dfd Level0 {
+            refines: OrderContext.OrderSystem
+
+            process ValidateOrder {}
+
+            flow OrderRequest: -> ValidateOrder
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.scds) == 1
+        assert len(doc.dfds) == 1
+        dfd = doc.dfds[0]
+        assert dfd.name == "Level0"
+        assert dfd.refines is not None
+        assert dfd.refines.diagram_name == "OrderContext"
+        assert dfd.refines.element_name == "OrderSystem"
+
+    def test_dfd_with_refines_dfd_parses(self) -> None:
+        """DFD refining a DFD process should parse correctly."""
+        source = """
+        scd Context {
+            system Sys {}
+            external Ext {}
+            flow F: Ext -> Sys
+        }
+
+        dfd Level0 {
+            refines: Context.Sys
+
+            process SubProcess {}
+
+            flow F: -> SubProcess
+        }
+
+        dfd Level1 {
+            refines: Level0.SubProcess
+
+            process DetailA {}
+            process DetailB {}
+
+            flow F: -> DetailA
+            flow Internal: DetailA -> DetailB
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.dfds) == 2
+        level1 = doc.dfds[1]
+        assert level1.name == "Level1"
+        assert level1.refines is not None
+        assert level1.refines.diagram_name == "Level0"
+        assert level1.refines.element_name == "SubProcess"
+
+    def test_dfd_without_refines_parse_error(self) -> None:
+        """DFD without refines declaration should produce parse error.
+
+        REQ-SEM-080: Every DFD must have a refines declaration.
+        """
+        source = """
+        dfd InvalidDFD {
+            process SomeProcess {}
+        }
+        """
+        with pytest.raises(ParseError):
+            parse_string(source)
+
+    def test_refines_node_has_location(self) -> None:
+        """RefinesNode should have source location."""
+        source = """scd Ctx {
+    system Sys {}
+    external E {}
+    flow F: E -> Sys
+}
+
+dfd Test {
+    refines: Ctx.Sys
+
+    process P {}
+
+    flow F: -> P
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.dfds) == 1
+        dfd = doc.dfds[0]
+        assert dfd.refines is not None
+        assert dfd.refines.location is not None, "Refines should have location set"
+        assert dfd.refines.location.line == 8, f"Expected line 8, got {dfd.refines.location.line}"
+
+    def test_refines_with_qualified_reference(self) -> None:
+        """Refines should correctly extract diagram and element names."""
+        source = """
+        scd MyDiagram {
+            system TheSystem {}
+            external E {}
+            flow F: E -> TheSystem
+        }
+
+        dfd Child {
+            refines: MyDiagram.TheSystem
+
+            process P {}
+
+            flow F: -> P
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        assert dfd.refines is not None
+        assert dfd.refines.diagram_name == "MyDiagram"
+        assert dfd.refines.element_name == "TheSystem"
+
+
+class TestBoundaryFlowParsing:
+    """Tests for DFD boundary flow syntax parsing.
+
+    REQ-SEM-084: DFDs shall support boundary flows with a single endpoint.
+    """
+
+    def test_inbound_boundary_flow_parses(self) -> None:
+        """Inbound boundary flow syntax should parse: flow Name: -> Process"""
+        source = """
+        scd Ctx {
+            system Sys {}
+            external E {}
+            flow Request: E -> Sys
+        }
+
+        dfd Test {
+            refines: Ctx.Sys
+
+            process Handler {}
+
+            flow Request: -> Handler
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        assert len(dfd.flows) == 1
+        flow = dfd.flows[0]
+        assert flow.name == "Request"
+        # Inbound boundary flow has no source, only target
+        assert flow.source is None
+        assert flow.target is not None
+        assert flow.target.entity == "Handler"
+
+    def test_outbound_boundary_flow_parses(self) -> None:
+        """Outbound boundary flow syntax should parse: flow Name: Process ->"""
+        source = """
+        scd Ctx {
+            system Sys {}
+            external E {}
+            flow Response: Sys -> E
+        }
+
+        dfd Test {
+            refines: Ctx.Sys
+
+            process Handler {}
+
+            flow Response: Handler ->
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        assert len(dfd.flows) == 1
+        flow = dfd.flows[0]
+        assert flow.name == "Response"
+        # Outbound boundary flow has source, no target
+        assert flow.source is not None
+        assert flow.source.entity == "Handler"
+        assert flow.target is None
+
+    def test_internal_flow_still_parses(self) -> None:
+        """Internal flows with both endpoints should still parse."""
+        source = """
+        scd Ctx {
+            system Sys {}
+            external E {}
+            flow F: E -> Sys
+        }
+
+        dfd Test {
+            refines: Ctx.Sys
+
+            process A {}
+            process B {}
+
+            flow F: -> A
+            flow Internal: A -> B
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        assert len(dfd.flows) == 2
+
+        internal = next((f for f in dfd.flows if f.name == "Internal"), None)
+        assert internal is not None
+        assert internal.source is not None
+        assert internal.target is not None
+        assert internal.source.entity == "A"
+        assert internal.target.entity == "B"
+
+    def test_boundary_flow_has_location(self) -> None:
+        """Boundary flows should have source location."""
+        source = """scd Ctx {
+    system Sys {}
+    external E {}
+    flow F: E -> Sys
+}
+
+dfd Test {
+    refines: Ctx.Sys
+
+    process P {}
+
+    flow F: -> P
+}
+"""
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        assert len(dfd.flows) == 1
+        flow = dfd.flows[0]
+        assert flow.location is not None, "Boundary flow should have location set"
+        assert flow.location.line == 12, f"Expected line 12, got {flow.location.line}"
+
+    def test_multiple_boundary_flows_parse(self) -> None:
+        """Multiple boundary flows in different directions should parse."""
+        source = """
+        scd Ctx {
+            system Sys {}
+            external A {}
+            external B {}
+            flow In1: A -> Sys
+            flow In2: B -> Sys
+            flow Out1: Sys -> A
+            flow Out2: Sys -> B
+        }
+
+        dfd Test {
+            refines: Ctx.Sys
+
+            process P1 {}
+            process P2 {}
+
+            flow In1: -> P1
+            flow In2: -> P2
+            flow Out1: P1 ->
+            flow Out2: P2 ->
+            flow Internal: P1 -> P2
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        assert len(dfd.flows) == 5
+
+        # Count boundary flows
+        inbound = [f for f in dfd.flows if f.source is None]
+        outbound = [f for f in dfd.flows if f.target is None]
+        internal = [f for f in dfd.flows if f.source is not None and f.target is not None]
+
+        assert len(inbound) == 2
+        assert len(outbound) == 2
+        assert len(internal) == 1
+
+
+class TestDFDNoExternals:
+    """Tests for DFD external entity restriction.
+
+    REQ-SEM-088: DFDs shall not declare external entities.
+    """
+
+    def test_dfd_with_external_parse_error(self) -> None:
+        """DFD with external declaration should produce parse error."""
+        source = """
+        scd Ctx {
+            system Sys {}
+            external E {}
+            flow F: E -> Sys
+        }
+
+        dfd Test {
+            refines: Ctx.Sys
+
+            external NotAllowed {}
+            process P {}
+
+            flow F: -> P
+        }
+        """
+        with pytest.raises(ParseError):
+            parse_string(source)
+
+
+class TestDFDLocalDatastore:
+    """Tests for DFD local datastore parsing.
+
+    REQ-SEM-085: DFDs may declare local datastores.
+    """
+
+    def test_dfd_with_local_datastore_parses(self) -> None:
+        """DFD with local datastore should parse."""
+        source = """
+        scd Ctx {
+            system Sys {}
+            external E {}
+            flow F: E -> Sys
+        }
+
+        dfd Test {
+            refines: Ctx.Sys
+
+            process P {}
+            datastore LocalCache {}
+
+            flow F: -> P
+            flow CacheWrite: P -> LocalCache
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        assert len(dfd.datastores) == 1
+        assert dfd.datastores[0].name == "LocalCache"
+
+    def test_dfd_datastore_flow_is_internal(self) -> None:
+        """Flow to local datastore should be internal (both endpoints)."""
+        source = """
+        scd Ctx {
+            system Sys {}
+            external E {}
+            flow F: E -> Sys
+        }
+
+        dfd Test {
+            refines: Ctx.Sys
+
+            process P {}
+            datastore LocalDB {}
+
+            flow F: -> P
+            flow Write: P -> LocalDB
+            flow Read: LocalDB -> P
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+
+        write_flow = next((f for f in dfd.flows if f.name == "Write"), None)
+        read_flow = next((f for f in dfd.flows if f.name == "Read"), None)
+
+        assert write_flow is not None
+        assert write_flow.source is not None
+        assert write_flow.target is not None
+
+        assert read_flow is not None
+        assert read_flow.source is not None
+        assert read_flow.target is not None

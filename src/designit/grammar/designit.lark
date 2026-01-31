@@ -42,20 +42,31 @@ scd_flow_arrow: ARROW           -> outbound_arrow
 // ============================================
 // Data Flow Diagram (DFD)
 // ============================================
-dfd_decl: DFD IDENTIFIER "{" _NL* dfd_body* "}"
+// DFDs must refine a system (from SCD) or process (from parent DFD)
+// DFDs contain NO external entities - externals exist only at the SCD level
+dfd_decl: DFD IDENTIFIER "{" _NL* refines_decl _NL* dfd_body* "}"
 
-dfd_body: external_decl _NL*
-        | process_decl _NL*
+// Refinement declaration - references Diagram.Element
+refines_decl: REFINES ":" qualified_ref
+
+// Qualified reference to element in another diagram (e.g., OrderContext.OrderSystem)
+qualified_ref: IDENTIFIER "." IDENTIFIER
+
+dfd_body: process_decl _NL*
         | datastore_decl _NL*
         | flow_decl _NL*
-
-external_decl: EXTERNAL IDENTIFIER block
 
 process_decl: PROCESS IDENTIFIER block
 
 datastore_decl: DATASTORE IDENTIFIER block
 
-flow_decl: FLOW IDENTIFIER ":" flow_endpoint "->" flow_endpoint properties?
+// Flow declarations support:
+// - Internal flows: flow Name: Source -> Target
+// - Boundary inbound: flow Name: -> Target
+// - Boundary outbound: flow Name: Source ->
+flow_decl: FLOW IDENTIFIER ":" flow_endpoint "->" flow_endpoint properties?   -> internal_flow_decl
+         | FLOW IDENTIFIER ":" "->" flow_endpoint properties?                 -> inbound_flow_decl
+         | FLOW IDENTIFIER ":" flow_endpoint "->" properties?                 -> outbound_flow_decl
 
 flow_endpoint: IDENTIFIER ("." IDENTIFIER)?
 
@@ -214,7 +225,7 @@ placeholder: "..." | "TBD"
 identifier: IDENTIFIER
           | STATE | PROCESS | EXTERNAL | DATASTORE | FLOW
           | ENTITY | RELATIONSHIP | TRANSITION | MODULE | STRUCTURE
-          | DFD | ERD | STD | SCD | DATADICT | IMPORT | INITIAL | SYSTEM
+          | DFD | ERD | STD | SCD | DATADICT | IMPORT | INITIAL | SYSTEM | REFINES
           | CALLS | DATA_COUPLE | CONTROL_COUPLE
           | PK | FK | UNIQUE | NOT | NULL | PATTERN | OPTIONAL | MIN | MAX
           | STRING_TYPE | INTEGER_TYPE | DECIMAL_TYPE | BOOLEAN_TYPE
@@ -239,6 +250,7 @@ STD: "std"
 DATADICT: "datadict"
 IMPORT: "import"
 INITIAL: "initial"
+REFINES: "refines"
 CALLS: "calls"
 DATA_COUPLE: "data_couple"
 CONTROL_COUPLE: "control_couple"

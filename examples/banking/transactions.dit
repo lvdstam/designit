@@ -1,11 +1,9 @@
 // Banking System - Transaction Model
 // Data Flow and Entity diagrams for transactions
 
-// Transaction DFD (sub-diagram)
+// Transaction DFD - refines ProcessTransaction from main DFD
 dfd TransactionProcessing {
-    external AccountSystem {
-        description: "Core account management"
-    }
+    refines: BankingSystemLevel0.ProcessTransaction
 
     process ValidateTransaction {
         description: "Validates transaction against business rules"
@@ -38,13 +36,19 @@ dfd TransactionProcessing {
         description: "Transaction audit trail"
     }
 
-    // Flows
-    flow TransactionRequest: AccountSystem -> ValidateTransaction
-    flow ValidationResult: ValidateTransaction -> AccountSystem
+    // Inbound boundary flows from parent
+    flow TransactionRequest: -> ValidateTransaction
+    flow HistoryQuery: -> RecordTransaction
+
+    // Outbound boundary flows to parent
+    flow TransactionConfirmation: ExecuteTransaction ->
+
+    // Internal Flows
+    flow ValidationResult: ValidateTransaction -> ExecuteTransaction
     flow ValidatedTransaction: ValidateTransaction -> TransactionQueue
     flow QueuedTransaction: TransactionQueue -> ExecuteTransaction
     flow TransactionResult: ExecuteTransaction -> RecordTransaction
-    flow BalanceUpdate: ExecuteTransaction -> AccountSystem
+    flow BalanceUpdate: ExecuteTransaction -> NotifyCustomer
     flow AuditRecord: RecordTransaction -> AuditLog
 }
 

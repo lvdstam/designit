@@ -28,6 +28,7 @@ from designit.model.dfd import (
     DFDModel,
     ExternalEntity,
     Process,
+    RefinesRef,
 )
 from designit.model.erd import (
     Attribute,
@@ -160,9 +161,23 @@ class SemanticAnalyzer:
 
     def _analyze_dfd(self, node: DFDNode, source_file: str | None) -> DFDModel:
         """Analyze a DFD AST node."""
-        model = DFDModel(name=node.name, source_file=source_file)
+        # Extract refines reference if present
+        refines = None
+        if node.refines:
+            refines = RefinesRef(
+                diagram_name=node.refines.diagram_name,
+                element_name=node.refines.element_name,
+                line=node.refines.location.line if node.refines.location else None,
+            )
 
-        # Process externals
+        model = DFDModel(
+            name=node.name,
+            source_file=source_file,
+            refines=refines,
+            line=node.location.line if node.location else None,
+        )
+
+        # Process externals (should be empty for new DFDs but kept for backward compat)
         for ext in node.externals:
             props = self._extract_properties(ext.body)
             external = ExternalEntity(
@@ -206,18 +221,47 @@ class SemanticAnalyzer:
                 self._warning(f"Duplicate datastore: {ds.name}", ds.name)
             model.datastores[ds.name] = datastore
 
-        # Process flows
+        # Process flows (supports internal and boundary flows)
+        # Track inbound boundary flows to detect duplicates
+        inbound_flow_handlers: dict[str, list[str]] = {}  # flow_name -> [handler_process_names]
+
         for flow in node.flows:
+            # Determine flow type based on source/target presence
+            if flow.source is None and flow.target is not None:
+                # Boundary inbound flow: -> Target
+                flow_type = "inbound"
+                source_ref = None
+                target_ref = ElementReference(name=flow.target.entity)
+                # Track this handler for detecting duplicates
+                if flow.name not in inbound_flow_handlers:
+                    inbound_flow_handlers[flow.name] = []
+                inbound_flow_handlers[flow.name].append(flow.target.entity)
+            elif flow.source is not None and flow.target is None:
+                # Boundary outbound flow: Source ->
+                flow_type = "outbound"
+                source_ref = ElementReference(name=flow.source.entity)
+                target_ref = None
+            else:
+                # Internal flow: Source -> Target
+                flow_type = "internal"
+                source_ref = ElementReference(name=flow.source.entity) if flow.source else None
+                target_ref = ElementReference(name=flow.target.entity) if flow.target else None
+
             data_flow = DataFlow(
                 name=flow.name,
-                source=ElementReference(name=flow.source.entity),
-                target=ElementReference(name=flow.target.entity),
+                source=source_ref,
+                target=target_ref,
+                flow_type=flow_type,
                 source_file=source_file,
                 line=flow.location.line if flow.location else None,
             )
             if flow.name in model.flows:
                 self._warning(f"Duplicate flow: {flow.name}", flow.name)
             model.flows[flow.name] = data_flow
+
+        # Store inbound handler counts in metadata for later validation
+        # We'll add an attribute to track this
+        model._inbound_flow_handlers = inbound_flow_handlers  # type: ignore[attr-defined]
 
         return model
 

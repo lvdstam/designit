@@ -73,6 +73,10 @@ class Validator:
         self.messages.clear()
 
         self._validate_dfds(doc)
+        self._validate_dfd_refinements(doc)
+        self._validate_dfd_flow_coverage(doc)
+        self._validate_unique_names(doc)
+        self._validate_dfd_datastore_conflicts(doc)
         self._validate_erds(doc)
         self._validate_stds(doc)
         self._validate_structures(doc)
@@ -83,6 +87,78 @@ class Validator:
 
         return self.messages
 
+    def _validate_dfd_refinements(self, doc: DesignDocument) -> None:
+        """Validate DFD refinement declarations.
+
+        REQ-SEM-080: Every DFD shall declare what parent element it refines.
+        REQ-SEM-081: The parent reference shall be resolved and validated.
+        """
+        for dfd_name, dfd in doc.dfds.items():
+            if not dfd.refines:
+                continue  # Grammar enforces this, but be safe
+
+            diagram_name = dfd.refines.diagram_name
+            element_name = dfd.refines.element_name
+            line = dfd.refines.line
+
+            # Check if diagram exists (could be SCD or DFD)
+            parent_scd = doc.scds.get(diagram_name)
+            parent_dfd = doc.dfds.get(diagram_name)
+
+            if not parent_scd and not parent_dfd:
+                self._error(
+                    f"DFD '{dfd_name}' refines non-existent diagram '{diagram_name}'",
+                    dfd_name,
+                    dfd.source_file,
+                    line,
+                )
+                continue
+
+            # Check if element exists and is valid type
+            if parent_scd:
+                # Can only refine system
+                if parent_scd.system and parent_scd.system.name == element_name:
+                    pass  # Valid - refining a system
+                elif element_name in parent_scd.externals:
+                    self._error(
+                        f"DFD '{dfd_name}' cannot refine external entity '{element_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        line,
+                    )
+                elif element_name in parent_scd.datastores:
+                    self._error(
+                        f"DFD '{dfd_name}' cannot refine datastore '{element_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        line,
+                    )
+                else:
+                    self._error(
+                        f"Element '{element_name}' not found in SCD '{diagram_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        line,
+                    )
+            elif parent_dfd:
+                # Can only refine process
+                if element_name in parent_dfd.processes:
+                    pass  # Valid - refining a process
+                elif element_name in parent_dfd.datastores:
+                    self._error(
+                        f"DFD '{dfd_name}' cannot refine datastore '{element_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        line,
+                    )
+                else:
+                    self._error(
+                        f"Process '{element_name}' not found in DFD '{diagram_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        line,
+                    )
+
     def _validate_dfds(self, doc: DesignDocument) -> None:
         """Validate all DFDs."""
         for dfd_name, dfd in doc.dfds.items():
@@ -92,14 +168,15 @@ class Validator:
             )
 
             for flow_name, flow in dfd.flows.items():
-                if flow.source.name not in all_elements:
+                # For boundary flows, source or target may be None
+                if flow.source is not None and flow.source.name not in all_elements:
                     self._error(
                         f"Flow '{flow_name}' references unknown source '{flow.source.name}'",
                         flow_name,
                         flow.source_file,
                         flow.line,
                     )
-                if flow.target.name not in all_elements:
+                if flow.target is not None and flow.target.name not in all_elements:
                     self._error(
                         f"Flow '{flow_name}' references unknown target '{flow.target.name}'",
                         flow_name,
@@ -110,8 +187,10 @@ class Validator:
             # Check for orphan elements (no flows in or out)
             elements_with_flows: set[str] = set()
             for flow in dfd.flows.values():
-                elements_with_flows.add(flow.source.name)
-                elements_with_flows.add(flow.target.name)
+                if flow.source is not None:
+                    elements_with_flows.add(flow.source.name)
+                if flow.target is not None:
+                    elements_with_flows.add(flow.target.name)
 
             for element in dfd.all_elements():
                 if element.name not in elements_with_flows and not element.is_placeholder:
@@ -120,6 +199,118 @@ class Validator:
                         element.name,
                         element.source_file,
                         element.line,
+                    )
+
+    def _validate_dfd_flow_coverage(self, doc: DesignDocument) -> None:
+        """Validate DFD flow coverage against parent diagram.
+
+        REQ-SEM-082: Inbound flows must be handled by exactly one process.
+        REQ-SEM-083: Outbound flows may be handled by zero or more processes.
+        """
+        for dfd_name, dfd in doc.dfds.items():
+            if not dfd.refines:
+                continue
+
+            diagram_name = dfd.refines.diagram_name
+            element_name = dfd.refines.element_name
+
+            # Get parent diagram
+            parent_scd = doc.scds.get(diagram_name)
+            parent_dfd = doc.dfds.get(diagram_name)
+
+            if not parent_scd and not parent_dfd:
+                # Already handled by _validate_dfd_refinements
+                continue
+
+            # Get parent flows involving the refined element
+            parent_inbound_flows: dict[str, str] = {}  # flow_name -> direction
+            parent_outbound_flows: dict[str, str] = {}
+            parent_bidirectional_flows: dict[str, str] = {}
+
+            if parent_scd:
+                system_name = element_name
+                for flow_name, flow in parent_scd.flows.items():
+                    if flow.target.name == system_name:
+                        # Flow into the system (inbound)
+                        if flow.direction == "bidirectional":
+                            parent_bidirectional_flows[flow_name] = "bidirectional"
+                        else:
+                            parent_inbound_flows[flow_name] = "inbound"
+                    if flow.source.name == system_name:
+                        # Flow out of the system (outbound)
+                        if flow.direction == "bidirectional":
+                            parent_bidirectional_flows[flow_name] = "bidirectional"
+                        else:
+                            parent_outbound_flows[flow_name] = "outbound"
+            elif parent_dfd:
+                process_name = element_name
+                for flow_name, flow in parent_dfd.flows.items():
+                    if flow.target and flow.target.name == process_name:
+                        parent_inbound_flows[flow_name] = "inbound"
+                    if flow.source and flow.source.name == process_name:
+                        parent_outbound_flows[flow_name] = "outbound"
+
+            # Get inbound handler counts from the analyzer (tracks duplicate declarations)
+            inbound_handler_counts: dict[str, list[str]] = getattr(
+                dfd, "_inbound_flow_handlers", {}
+            )
+
+            # Check for direction mismatches in declared flows
+            for flow_name, flow in dfd.flows.items():
+                if flow.flow_type == "inbound":
+                    # Check for direction mismatch with parent
+                    if flow_name in parent_outbound_flows:
+                        self._error(
+                            f"Flow '{flow_name}' direction mismatch: declared as inbound but parent has it as outbound",
+                            flow_name,
+                            flow.source_file,
+                            flow.line,
+                        )
+                elif flow.flow_type == "outbound":
+                    # Check for direction mismatch with parent
+                    if flow_name in parent_inbound_flows:
+                        self._error(
+                            f"Flow '{flow_name}' direction mismatch: declared as outbound but parent has it as inbound",
+                            flow_name,
+                            flow.source_file,
+                            flow.line,
+                        )
+                    # Outbound flows can be handled 0+ times, no error needed
+
+            # Check inbound flows: must be handled exactly once
+            for flow_name in parent_inbound_flows:
+                handlers = inbound_handler_counts.get(flow_name, [])
+                if len(handlers) == 0:
+                    self._error(
+                        f"Inbound flow '{flow_name}' from parent not handled in DFD '{dfd_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        dfd.refines.line if dfd.refines else dfd.line,
+                    )
+                elif len(handlers) > 1:
+                    self._error(
+                        f"Inbound flow '{flow_name}' handled by multiple processes in DFD '{dfd_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        dfd.line,
+                    )
+
+            # Check bidirectional flows: inbound part must be handled exactly once
+            for flow_name in parent_bidirectional_flows:
+                handlers = inbound_handler_counts.get(flow_name, [])
+                if len(handlers) == 0:
+                    self._error(
+                        f"Inbound flow '{flow_name}' from parent not handled in DFD '{dfd_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        dfd.refines.line if dfd.refines else dfd.line,
+                    )
+                elif len(handlers) > 1:
+                    self._error(
+                        f"Inbound flow '{flow_name}' handled by multiple processes in DFD '{dfd_name}'",
+                        dfd_name,
+                        dfd.source_file,
+                        dfd.line,
                     )
 
     def _validate_erds(self, doc: DesignDocument) -> None:
@@ -357,6 +548,71 @@ class Validator:
                         flow.name,
                         flow.source_file,
                         flow.line,
+                    )
+
+    def _validate_unique_names(self, doc: DesignDocument) -> None:
+        """Validate no duplicate element names across the document.
+
+        REQ-SEM-087: No duplicate element names across the import tree.
+        """
+        # Track seen names with their location info: name -> (type, diagram, source_file, line)
+        seen_names: dict[str, tuple[str, str, str | None, int | None]] = {}
+
+        # Collect externals from all SCDs
+        for scd_name, scd in doc.scds.items():
+            for ext_name, ext in scd.externals.items():
+                if ext_name in seen_names:
+                    prev_type, prev_diagram, _, _ = seen_names[ext_name]
+                    self._error(
+                        f"Duplicate element name '{ext_name}': external in SCD '{scd_name}' "
+                        f"conflicts with {prev_type} in '{prev_diagram}'",
+                        ext_name,
+                        ext.source_file,
+                        ext.line,
+                    )
+                else:
+                    seen_names[ext_name] = ("external", scd_name, ext.source_file, ext.line)
+
+            # Collect datastores from SCDs
+            for ds_name, ds in scd.datastores.items():
+                if ds_name in seen_names:
+                    prev_type, prev_diagram, _, _ = seen_names[ds_name]
+                    self._error(
+                        f"Duplicate element name '{ds_name}': datastore in SCD '{scd_name}' "
+                        f"conflicts with {prev_type} in '{prev_diagram}'",
+                        ds_name,
+                        ds.source_file,
+                        ds.line,
+                    )
+                else:
+                    seen_names[ds_name] = ("datastore", scd_name, ds.source_file, ds.line)
+
+    def _validate_dfd_datastore_conflicts(self, doc: DesignDocument) -> None:
+        """Validate DFD local datastores don't conflict with SCD elements.
+
+        REQ-SEM-085: DFDs may declare local datastores.
+        REQ-SEM-086: Child DFDs can reference datastores from the parent tree.
+        """
+        # Collect all SCD element names (externals and datastores)
+        scd_element_names: dict[str, tuple[str, str]] = {}  # name -> (type, scd_name)
+
+        for scd_name, scd in doc.scds.items():
+            for ext_name in scd.externals:
+                scd_element_names[ext_name] = ("external", scd_name)
+            for ds_name in scd.datastores:
+                scd_element_names[ds_name] = ("datastore", scd_name)
+
+        # Check DFD datastores for conflicts
+        for dfd_name, dfd in doc.dfds.items():
+            for ds_name, ds in dfd.datastores.items():
+                if ds_name in scd_element_names:
+                    elem_type, scd_name = scd_element_names[ds_name]
+                    self._error(
+                        f"Duplicate element name '{ds_name}': datastore in DFD '{dfd_name}' "
+                        f"conflicts with {elem_type} in SCD '{scd_name}'",
+                        ds_name,
+                        ds.source_file,
+                        ds.line,
                     )
 
     def _report_placeholders(self, doc: DesignDocument) -> None:
