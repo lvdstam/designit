@@ -1,6 +1,102 @@
 // Banking System - System Context Diagram
 // Shows the banking system's boundary and external interactions
 
+// Data Dictionary for context-level flows
+datadict {
+    // Customer authentication flows
+    LoginRequest = {
+        username: string
+        password: string
+        device_info: string [optional]
+    }
+
+    // Account information response
+    AccountInfo = {
+        account_number: string
+        balance: decimal
+        account_type: string
+        last_transaction_date: datetime [optional]
+    }
+
+    // Transaction request (bidirectional with confirmation)
+    TransactionRequest = {
+        account_number: string
+        type: string
+        amount: decimal
+        description: string [optional]
+    }
+
+    TransactionConfirmation = {
+        transaction_id: string
+        status: string
+        timestamp: datetime
+        message: string [optional]
+    }
+
+    // Teller operations
+    TellerQuery = {
+        query_type: string
+        customer_id: string [optional]
+        account_number: string [optional]
+    }
+
+    CustomerData = {
+        customer_id: string
+        name: string
+        accounts: string
+        contact_info: string
+    }
+
+    // External bank transfers
+    TransferData = {
+        from_account: string
+        to_account: string
+        to_bank_code: string
+        amount: decimal
+        currency: string
+    }
+
+    // Regulatory compliance
+    ComplianceReport = {
+        report_type: string
+        period_start: date
+        period_end: date
+        data: string
+    }
+
+    AuditRequest = {
+        request_id: string
+        audit_type: string
+        date_range: string
+    }
+
+    // Database operations
+    CustomerLookup = {
+        customer_id: string [optional]
+        account_number: string [optional]
+    }
+
+    CustomerUpdate = {
+        customer_id: string
+        field: string
+        value: string
+    }
+
+    TransactionRecord = {
+        transaction_id: string
+        account_id: string
+        type: string
+        amount: decimal
+        timestamp: datetime
+    }
+
+    AuditQuery = {
+        query_type: string
+        date_range: string
+        filters: string [optional]
+    }
+}
+
 scd BankingSystemContext {
     system BankingSystem {
         description: "Core banking application handling\naccounts, transactions, and reporting"

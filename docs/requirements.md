@@ -377,6 +377,23 @@ The system shall transform the parsed AST into a rich semantic model.
 
 ---
 
+#### REQ-SEM-002: Validation Message Source Location [DONE]
+All validation messages shall include accurate source location information.
+
+**Acceptance Criteria:**
+- Validation ERROR messages include line number of the problematic element
+- Validation WARNING messages include line number of the problematic element
+- Line numbers are derived from AST node locations captured during parsing
+- LSP diagnostics point to the correct source line (0-based indexing)
+- Multiple validation errors on different lines have distinct line numbers
+
+**Implementation:**
+- Parser: `src/designit/parser/parser.py` (transformer methods must set location)
+- Validator: `src/designit/semantic/validator.py` (passes location to messages)
+- LSP: `src/designit/lsp/server.py:_get_diagnostics()` (converts to LSP range)
+
+---
+
 ### 2.2 Validation Rules
 
 #### REQ-SEM-005: SCD System Validation [DONE]
@@ -541,6 +558,32 @@ Flow names not defined in data dictionary shall generate an informational messag
 **Acceptance Criteria:**
 - INFO if DFD flow name not found in data dictionary
 - Encourages documenting data types
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
+
+---
+
+#### REQ-SEM-061: SCD Flow Data Dictionary Validation [DONE]
+SCD flow names shall be validated against the data dictionary.
+
+**Acceptance Criteria:**
+- ERROR if SCD flow name is not defined in data dictionary
+- Error message format: `Flow '<flow_name>' in SCD '<scd_name>' is not defined in data dictionary`
+- Error includes source file and line number of the flow definition
+- Validation applies regardless of whether data dictionary is empty or absent
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
+
+---
+
+#### REQ-SEM-062: DFD Flow Data Dictionary Validation Severity [DONE]
+DFD flow data dictionary validation shall use ERROR severity.
+
+**Acceptance Criteria:**
+- Upgrade existing DFD flow validation from INFO to ERROR severity
+- Error message format: `Flow '<flow_name>' in DFD '<dfd_name>' is not defined in data dictionary`
+- Error includes source file and line number of the flow definition
+- Consistent with SCD flow validation (REQ-SEM-061)
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
 

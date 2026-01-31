@@ -337,13 +337,23 @@ class Validator:
         if doc.data_dictionary:
             data_types = set(doc.data_dictionary.definitions.keys())
 
-        # Check DFD flow types against data dictionary
-        for dfd in doc.dfds.values():
+        # Check DFD flow types against data dictionary (REQ-SEM-062)
+        for dfd_name, dfd in doc.dfds.items():
             for flow in dfd.flows.values():
-                # Flow names often represent data types
-                if data_types and flow.name not in data_types:
-                    self._info(
-                        f"Flow '{flow.name}' is not defined in data dictionary",
+                if flow.name not in data_types:
+                    self._error(
+                        f"Flow '{flow.name}' in DFD '{dfd_name}' is not defined in data dictionary",
+                        flow.name,
+                        flow.source_file,
+                        flow.line,
+                    )
+
+        # Check SCD flow types against data dictionary (REQ-SEM-061)
+        for scd_name, scd in doc.scds.items():
+            for flow in scd.flows.values():
+                if flow.name not in data_types:
+                    self._error(
+                        f"Flow '{flow.name}' in SCD '{scd_name}' is not defined in data dictionary",
                         flow.name,
                         flow.source_file,
                         flow.line,

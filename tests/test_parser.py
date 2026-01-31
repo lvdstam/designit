@@ -323,3 +323,293 @@ class TestParseErrors:
         error_msg = str(exc_info.value)
         # Should mention at least some valid keywords
         assert "DFD" in error_msg or "dfd" in error_msg.lower()
+
+
+class TestNodeLocation:
+    """Tests for source location tracking on all AST node types.
+
+    REQ-SEM-002: All validation messages shall include accurate source location.
+    This requires all AST nodes to capture location during parsing.
+    """
+
+    # ============================================
+    # DFD Elements
+    # ============================================
+
+    def test_external_node_has_location(self) -> None:
+        """ExternalNode should have source location."""
+        source = """dfd Test {
+    external MyExternal {}
+    process P {}
+    flow F: MyExternal -> P
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.dfds) == 1
+        assert len(doc.dfds[0].externals) == 1
+        ext = doc.dfds[0].externals[0]
+        assert ext.location is not None, "External should have location set"
+        assert ext.location.line == 2, f"Expected line 2, got {ext.location.line}"
+
+    def test_process_node_has_location(self) -> None:
+        """ProcessNode should have source location."""
+        source = """dfd Test {
+    external E {}
+    process MyProcess {}
+    flow F: E -> MyProcess
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.dfds) == 1
+        assert len(doc.dfds[0].processes) == 1
+        proc = doc.dfds[0].processes[0]
+        assert proc.location is not None, "Process should have location set"
+        assert proc.location.line == 3, f"Expected line 3, got {proc.location.line}"
+
+    def test_datastore_node_has_location(self) -> None:
+        """DatastoreNode should have source location."""
+        source = """dfd Test {
+    process P {}
+    datastore MyDatastore {}
+    flow F: P -> MyDatastore
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.dfds) == 1
+        assert len(doc.dfds[0].datastores) == 1
+        ds = doc.dfds[0].datastores[0]
+        assert ds.location is not None, "Datastore should have location set"
+        assert ds.location.line == 3, f"Expected line 3, got {ds.location.line}"
+
+    # ============================================
+    # SCD Elements
+    # ============================================
+
+    def test_system_node_has_location(self) -> None:
+        """SystemNode should have source location."""
+        source = """scd Test {
+    system MySystem {}
+    external E {}
+    flow F: E -> MySystem
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.scds) == 1
+        assert doc.scds[0].system is not None
+        sys = doc.scds[0].system
+        assert sys.location is not None, "System should have location set"
+        assert sys.location.line == 2, f"Expected line 2, got {sys.location.line}"
+
+    def test_scd_external_node_has_location(self) -> None:
+        """ExternalNode in SCD should have source location."""
+        source = """scd Test {
+    system S {}
+    external MyExternal {}
+    flow F: MyExternal -> S
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.scds) == 1
+        assert len(doc.scds[0].externals) == 1
+        ext = doc.scds[0].externals[0]
+        assert ext.location is not None, "SCD External should have location set"
+        assert ext.location.line == 3, f"Expected line 3, got {ext.location.line}"
+
+    def test_scd_datastore_node_has_location(self) -> None:
+        """DatastoreNode in SCD should have source location."""
+        source = """scd Test {
+    system S {}
+    datastore MyDatastore {}
+    flow F: S -> MyDatastore
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.scds) == 1
+        assert len(doc.scds[0].datastores) == 1
+        ds = doc.scds[0].datastores[0]
+        assert ds.location is not None, "SCD Datastore should have location set"
+        assert ds.location.line == 3, f"Expected line 3, got {ds.location.line}"
+
+    # ============================================
+    # ERD Elements
+    # ============================================
+
+    def test_entity_node_has_location(self) -> None:
+        """EntityNode should have source location."""
+        source = """erd Test {
+    entity MyEntity {
+        id: integer [pk]
+    }
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.erds) == 1
+        assert len(doc.erds[0].entities) == 1
+        entity = doc.erds[0].entities[0]
+        assert entity.location is not None, "Entity should have location set"
+        assert entity.location.line == 2, f"Expected line 2, got {entity.location.line}"
+
+    def test_relationship_node_has_location(self) -> None:
+        """RelationshipNode should have source location."""
+        source = """erd Test {
+    entity A { id: integer [pk] }
+    entity B { id: integer [pk] }
+    relationship MyRel: A -1:n-> B
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.erds) == 1
+        assert len(doc.erds[0].relationships) == 1
+        rel = doc.erds[0].relationships[0]
+        assert rel.location is not None, "Relationship should have location set"
+        assert rel.location.line == 4, f"Expected line 4, got {rel.location.line}"
+
+    # ============================================
+    # STD Elements
+    # ============================================
+
+    def test_state_node_has_location(self) -> None:
+        """StateNode should have source location."""
+        source = """std Test {
+    initial: Idle
+    state Idle {}
+    state MyState {}
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.stds) == 1
+        # MyState is the second state (after Idle)
+        states = doc.stds[0].states
+        assert len(states) == 2
+        my_state = next((s for s in states if s.name == "MyState"), None)
+        assert my_state is not None
+        assert my_state.location is not None, "State should have location set"
+        assert my_state.location.line == 4, f"Expected line 4, got {my_state.location.line}"
+
+    def test_transition_node_has_location(self) -> None:
+        """TransitionNode should have source location."""
+        source = """std Test {
+    initial: A
+    state A {}
+    state B {}
+    transition MyTrans: A -> B
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.stds) == 1
+        assert len(doc.stds[0].transitions) == 1
+        trans = doc.stds[0].transitions[0]
+        assert trans.location is not None, "Transition should have location set"
+        assert trans.location.line == 5, f"Expected line 5, got {trans.location.line}"
+
+    # ============================================
+    # Structure Chart Elements
+    # ============================================
+
+    def test_module_node_has_location(self) -> None:
+        """ModuleNode should have source location."""
+        source = """structure Test {
+    module MyModule {
+        calls: [SubModule]
+    }
+    module SubModule {}
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.structures) == 1
+        modules = doc.structures[0].modules
+        assert len(modules) == 2
+        # First module is MyModule on line 2
+        mod = modules[0]
+        assert mod.location is not None, "Module should have location set"
+        assert mod.location.line == 2, f"Expected line 2, got {mod.location.line}"
+
+    # ============================================
+    # Data Dictionary Elements
+    # ============================================
+
+    def test_datadef_node_has_location(self) -> None:
+        """DataDefNode should have source location."""
+        source = """datadict {
+    MyType = string
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.datadicts) == 1
+        assert len(doc.datadicts[0].definitions) == 1
+        defn = doc.datadicts[0].definitions[0]
+        assert defn.location is not None, "DataDef should have location set"
+        assert defn.location.line == 2, f"Expected line 2, got {defn.location.line}"
+
+
+class TestFlowLocation:
+    """Tests for source location tracking on flow nodes."""
+
+    def test_dfd_flow_has_location(self) -> None:
+        """DFD flow nodes should have source location."""
+        source = """dfd Test {
+    external A {}
+    process B {}
+    flow MyFlow: A -> B
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.dfds) == 1
+        assert len(doc.dfds[0].flows) == 1
+        flow = doc.dfds[0].flows[0]
+        # This test will FAIL until we fix the parser
+        assert flow.location is not None, "Flow should have location set"
+        assert flow.location.line == 4, f"Expected line 4, got {flow.location.line}"
+
+    def test_scd_flow_has_location(self) -> None:
+        """SCD flow nodes should have source location."""
+        source = """scd Test {
+    system Core {}
+    external User {}
+    flow MyFlow: User -> Core
+}
+"""
+        doc = parse_string(source)
+        assert len(doc.scds) == 1
+        assert len(doc.scds[0].flows) == 1
+        flow = doc.scds[0].flows[0]
+        # This test will FAIL until we fix the parser
+        assert flow.location is not None, "SCD flow should have location set"
+        assert flow.location.line == 4, f"Expected line 4, got {flow.location.line}"
+
+    def test_multiple_flows_have_distinct_locations(self) -> None:
+        """Multiple flows should have distinct line numbers."""
+        source = """scd Test {
+    system Core {}
+    external A {}
+    external B {}
+    flow Flow1: A -> Core
+    flow Flow2: Core -> B
+    flow Flow3: A <-> B
+}
+"""
+        doc = parse_string(source)
+        flows = doc.scds[0].flows
+        assert len(flows) == 3
+
+        # This test will FAIL until we fix the parser
+        locations = [f.location for f in flows]
+        assert all(loc is not None for loc in locations), "All flows should have locations"
+
+        lines = [loc.line for loc in locations]
+        assert lines == [5, 6, 7], f"Expected lines [5, 6, 7], got {lines}"
+
+    def test_flow_location_has_column(self) -> None:
+        """Flow location should include column information."""
+        source = """scd Test {
+    system Core {}
+    external User {}
+    flow MyFlow: User -> Core
+}
+"""
+        doc = parse_string(source)
+        flow = doc.scds[0].flows[0]
+        # This test will FAIL until we fix the parser
+        assert flow.location is not None
+        assert flow.location.column is not None
+        assert flow.location.column > 0

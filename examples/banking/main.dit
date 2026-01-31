@@ -5,6 +5,68 @@ import "./context.dit"
 import "./accounts.dit"
 import "./transactions.dit"
 
+// Data Dictionary for main DFD flows
+datadict {
+    // Authentication flows
+    Credentials = {
+        username: string
+        password: string
+    }
+
+    AuthToken = {
+        token: string
+        expires_at: datetime
+        user_id: string
+    }
+
+    AuthError = {
+        error_code: string
+        message: string
+    }
+
+    // Report flows
+    ReportRequest = {
+        report_type: string
+        date_range: string
+        format: string [optional]
+    }
+
+    Report = {
+        report_id: string
+        content: string
+        generated_at: datetime
+    }
+
+    HistoryQuery = {
+        account_id: string
+        start_date: date
+        end_date: date
+    }
+
+    // Transfer flows
+    TransferRequest = {
+        from_account: string
+        to_account: string
+        amount: decimal
+        description: string [optional]
+    }
+
+    ExternalTransfer = {
+        from_account: string
+        to_account: string
+        to_bank_code: string
+        amount: decimal
+        currency: string
+    }
+
+    // Account flows
+    AccountUpdate = {
+        account_id: string
+        field: string
+        value: string
+    }
+}
+
 // Main Data Flow Diagram
 dfd BankingSystem {
     // External Entities

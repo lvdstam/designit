@@ -329,31 +329,41 @@ class DesignItTransformer(Transformer[Token, Any]):
         port = items[1] if len(items) > 1 else None
         return FlowEndpointNode(entity=entity, port=port)
 
-    def external_decl(self, items: list[Any]) -> ExternalNode:
+    @v_args(meta=True)
+    def external_decl(self, meta: Any, items: list[Any]) -> ExternalNode:
         # items: [EXTERNAL, IDENTIFIER, block] - skip the keyword
         name = items[1]
         body = items[2] if len(items) > 2 else BlockNode()
-        return ExternalNode(name=name, body=body)
+        return ExternalNode(name=name, body=body, location=_get_location(meta))
 
-    def process_decl(self, items: list[Any]) -> ProcessNode:
+    @v_args(meta=True)
+    def process_decl(self, meta: Any, items: list[Any]) -> ProcessNode:
         # items: [PROCESS, IDENTIFIER, block] - skip the keyword
         name = items[1]
         body = items[2] if len(items) > 2 else BlockNode()
-        return ProcessNode(name=name, body=body)
+        return ProcessNode(name=name, body=body, location=_get_location(meta))
 
-    def datastore_decl(self, items: list[Any]) -> DatastoreNode:
+    @v_args(meta=True)
+    def datastore_decl(self, meta: Any, items: list[Any]) -> DatastoreNode:
         # items: [DATASTORE, IDENTIFIER, block] - skip the keyword
         name = items[1]
         body = items[2] if len(items) > 2 else BlockNode()
-        return DatastoreNode(name=name, body=body)
+        return DatastoreNode(name=name, body=body, location=_get_location(meta))
 
-    def flow_decl(self, items: list[Any]) -> FlowNode:
+    @v_args(meta=True)
+    def flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
         # items: [FLOW, IDENTIFIER, flow_endpoint, flow_endpoint, properties?] - skip the keyword
         name = items[1]
         source = items[2]
         target = items[3]
         properties = items[4] if len(items) > 4 else []
-        return FlowNode(name=name, source=source, target=target, properties=properties)
+        return FlowNode(
+            name=name,
+            source=source,
+            target=target,
+            properties=properties,
+            location=_get_location(meta),
+        )
 
     def dfd_body(self, items: list[Any]) -> Any:
         return items[0] if items else None
@@ -388,25 +398,28 @@ class DesignItTransformer(Transformer[Token, Any]):
     # SCD Elements
     # ============================================
 
-    def system_decl(self, items: list[Any]) -> SystemNode:
+    @v_args(meta=True)
+    def system_decl(self, meta: Any, items: list[Any]) -> SystemNode:
         # items: [SYSTEM, IDENTIFIER, block] - skip the keyword
         name = items[1]
         body = items[2] if len(items) > 2 else BlockNode()
-        return SystemNode(name=name, body=body)
+        return SystemNode(name=name, body=body, location=_get_location(meta))
 
-    def scd_external_decl(self, items: list[Any]) -> ExternalNode:
+    @v_args(meta=True)
+    def scd_external_decl(self, meta: Any, items: list[Any]) -> ExternalNode:
         # Reuse ExternalNode from DFD
         # items: [EXTERNAL, IDENTIFIER, block] - skip the keyword
         name = items[1]
         body = items[2] if len(items) > 2 else BlockNode()
-        return ExternalNode(name=name, body=body)
+        return ExternalNode(name=name, body=body, location=_get_location(meta))
 
-    def scd_datastore_decl(self, items: list[Any]) -> DatastoreNode:
+    @v_args(meta=True)
+    def scd_datastore_decl(self, meta: Any, items: list[Any]) -> DatastoreNode:
         # Reuse DatastoreNode from DFD
         # items: [DATASTORE, IDENTIFIER, block] - skip the keyword
         name = items[1]
         body = items[2] if len(items) > 2 else BlockNode()
-        return DatastoreNode(name=name, body=body)
+        return DatastoreNode(name=name, body=body, location=_get_location(meta))
 
     def scd_flow_endpoint(self, items: list[Any]) -> str:
         return items[0] if items else ""
@@ -420,7 +433,8 @@ class DesignItTransformer(Transformer[Token, Any]):
     def scd_flow_arrow(self, items: list[Any]) -> str:
         return items[0] if items else "outbound"
 
-    def scd_flow_decl(self, items: list[Any]) -> SCDFlowNode:
+    @v_args(meta=True)
+    def scd_flow_decl(self, meta: Any, items: list[Any]) -> SCDFlowNode:
         # items: [FLOW, IDENTIFIER, source, arrow_direction, target, properties?]
         name = items[1]
         source = items[2]
@@ -442,6 +456,7 @@ class DesignItTransformer(Transformer[Token, Any]):
             target=target,
             direction=direction,
             properties=properties,
+            location=_get_location(meta),
         )
 
     def scd_body(self, items: list[Any]) -> Any:
@@ -514,7 +529,8 @@ class DesignItTransformer(Transformer[Token, Any]):
     def entity_body(self, items: list[Any]) -> AttributeNode | PlaceholderNode:
         return items[0] if items else PlaceholderNode()
 
-    def entity_decl(self, items: list[Any]) -> EntityNode:
+    @v_args(meta=True)
+    def entity_decl(self, meta: Any, items: list[Any]) -> EntityNode:
         # items: [ENTITY, IDENTIFIER, ...attributes] - skip the keyword
         name = items[1]
         attributes = []
@@ -526,7 +542,12 @@ class DesignItTransformer(Transformer[Token, Any]):
             elif isinstance(item, PlaceholderNode):
                 has_placeholder = True
 
-        return EntityNode(name=name, attributes=attributes, has_placeholder=has_placeholder)
+        return EntityNode(
+            name=name,
+            attributes=attributes,
+            has_placeholder=has_placeholder,
+            location=_get_location(meta),
+        )
 
     def cardinality(self, items: list[Any]) -> CardinalityNode:
         if len(items) == 1:
@@ -540,7 +561,8 @@ class DesignItTransformer(Transformer[Token, Any]):
             # Two specs
             return CardinalityNode(source=items[0], target=items[1])
 
-    def relationship_decl(self, items: list[Any]) -> RelationshipNode:
+    @v_args(meta=True)
+    def relationship_decl(self, meta: Any, items: list[Any]) -> RelationshipNode:
         # items: [RELATIONSHIP, IDENTIFIER, IDENTIFIER, cardinality, IDENTIFIER, properties?]
         # Skip the keyword
         name = items[1]
@@ -554,6 +576,7 @@ class DesignItTransformer(Transformer[Token, Any]):
             target_entity=target_entity,
             cardinality=cardinality,
             properties=properties,
+            location=_get_location(meta),
         )
 
     def erd_body(self, items: list[Any]) -> Any:
@@ -581,13 +604,15 @@ class DesignItTransformer(Transformer[Token, Any]):
         # items: [INITIAL, IDENTIFIER] - skip the keyword
         return ("initial", items[1])
 
-    def state_decl(self, items: list[Any]) -> StateNode:
+    @v_args(meta=True)
+    def state_decl(self, meta: Any, items: list[Any]) -> StateNode:
         # items: [STATE, IDENTIFIER, block] - skip the keyword
         name = items[1]
         body = items[2] if len(items) > 2 else BlockNode()
-        return StateNode(name=name, body=body)
+        return StateNode(name=name, body=body, location=_get_location(meta))
 
-    def transition_decl(self, items: list[Any]) -> TransitionNode:
+    @v_args(meta=True)
+    def transition_decl(self, meta: Any, items: list[Any]) -> TransitionNode:
         # items: [TRANSITION, IDENTIFIER, IDENTIFIER, IDENTIFIER, properties?] - skip the keyword
         name = items[1]
         source = items[2]
@@ -598,6 +623,7 @@ class DesignItTransformer(Transformer[Token, Any]):
             source_state=source,
             target_state=target,
             properties=properties,
+            location=_get_location(meta),
         )
 
     def std_body(self, items: list[Any]) -> Any:
@@ -647,7 +673,8 @@ class DesignItTransformer(Transformer[Token, Any]):
     def module_body(self, items: list[Any]) -> Any:
         return items[0] if items else None
 
-    def module_decl(self, items: list[Any]) -> ModuleNode:
+    @v_args(meta=True)
+    def module_decl(self, meta: Any, items: list[Any]) -> ModuleNode:
         # items: [MODULE, IDENTIFIER, ...module_body] - skip the keyword
         name = items[1]
         calls: list[str] = []
@@ -676,6 +703,7 @@ class DesignItTransformer(Transformer[Token, Any]):
             control_couples=control_couples,
             properties=properties,
             has_placeholder=has_placeholder,
+            location=_get_location(meta),
         )
 
     def structure_body(self, items: list[Any]) -> Any:
@@ -768,10 +796,11 @@ class DesignItTransformer(Transformer[Token, Any]):
     def data_definition(self, items: list[Any]) -> Any:
         return items[0] if items else PlaceholderNode()
 
-    def datadef_decl(self, items: list[Any]) -> DataDefNode:
+    @v_args(meta=True)
+    def datadef_decl(self, meta: Any, items: list[Any]) -> DataDefNode:
         name = items[0]
         definition = items[1] if len(items) > 1 else PlaceholderNode()
-        return DataDefNode(name=name, definition=definition)
+        return DataDefNode(name=name, definition=definition, location=_get_location(meta))
 
     def datadict_body(self, items: list[Any]) -> DataDefNode:
         return items[0]
@@ -827,18 +856,22 @@ class DesignItTransformer(Transformer[Token, Any]):
 def _create_parser() -> Lark:
     """Create a Lark parser for the DesignIt grammar."""
     grammar_text = GRAMMAR_PATH.read_text()
+    # NOTE: We don't pass the transformer here because @v_args(meta=True)
+    # is not supported for internal transformers. Instead, we apply the
+    # transformer separately after parsing.
     return Lark(
         grammar_text,
         start="start",
         parser="lalr",
         lexer="basic",
-        transformer=DesignItTransformer(),
         propagate_positions=True,
     )
 
 
 # Global parser instance (lazy loaded)
 _parser: Lark | None = None
+# Global transformer instance
+_transformer: DesignItTransformer | None = None
 
 
 def _get_parser() -> Lark:
@@ -847,6 +880,14 @@ def _get_parser() -> Lark:
     if _parser is None:
         _parser = _create_parser()
     return _parser
+
+
+def _get_transformer() -> DesignItTransformer:
+    """Get or create the global transformer instance."""
+    global _transformer
+    if _transformer is None:
+        _transformer = DesignItTransformer()
+    return _transformer
 
 
 def parse_string(source: str, filename: str | None = None) -> DocumentNode:
@@ -863,8 +904,10 @@ def parse_string(source: str, filename: str | None = None) -> DocumentNode:
         ParseError: If parsing fails.
     """
     parser = _get_parser()
+    transformer = _get_transformer()
     try:
-        result = parser.parse(source)
+        tree = parser.parse(source)
+        result = transformer.transform(tree)
         if isinstance(result, DocumentNode):
             return result
         # Should not happen with our transformer
