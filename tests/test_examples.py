@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from designit.generators.graphviz import GraphVizGenerator
+from designit.generators.mermaid import MermaidGenerator
 from designit.model.base import ValidationSeverity
 from designit.semantic.analyzer import analyze_file
 from designit.semantic.validator import validate
@@ -112,3 +114,83 @@ class TestBankingExample:
         messages = validate(doc)
         errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
         assert len(errors) == 0
+
+
+class TestSCDGeneration:
+    """Tests for SCD diagram generation layout."""
+
+    @pytest.fixture
+    def scd_model(self) -> None:
+        """Get the SCD model from the banking example."""
+        examples_dir = Path(__file__).parent.parent / "examples" / "banking"
+        context_file = examples_dir / "context.dit"
+        doc = analyze_file(str(context_file))
+        return doc.scds["BankingSystemContext"]
+
+    def test_graphviz_scd_radial_layout(self, scd_model) -> None:
+        """Test that GraphViz SCD uses neato radial layout (REQ-GEN-057)."""
+        generator = GraphVizGenerator()
+        output = generator.generate_scd(scd_model)
+
+        # Verify neato layout configuration
+        assert "layout=neato" in output
+        assert "overlap=false" in output
+        assert "splines=true" in output
+
+        # Verify system is doublecircle pinned at center
+        assert "shape=doublecircle" in output
+        assert 'pos="0,0!"' in output
+
+        # Verify system has filled style
+        assert "fillcolor=lightyellow" in output
+
+    def test_graphviz_scd_elements(self, scd_model) -> None:
+        """Test that GraphViz SCD contains expected elements."""
+        generator = GraphVizGenerator()
+        output = generator.generate_scd(scd_model)
+
+        # Verify system
+        assert "BankingSystem" in output
+
+        # Verify external entities as boxes
+        assert '"Customer"' in output
+        assert "shape=box" in output
+
+        # Verify datastores as cylinders
+        assert '"CustomerDB"' in output
+        assert "shape=cylinder" in output
+
+        # Verify bidirectional flow
+        assert "dir=both" in output
+
+    def test_mermaid_scd_lr_layout(self, scd_model) -> None:
+        """Test that Mermaid SCD uses LR layout (REQ-GEN-008)."""
+        generator = MermaidGenerator()
+        output = generator.generate_scd(scd_model)
+
+        # Verify LR layout direction
+        assert "flowchart LR" in output
+
+        # Verify system is declared (stadium shape with double brackets)
+        assert "[[" in output  # Stadium shape syntax
+
+    def test_mermaid_scd_elements(self, scd_model) -> None:
+        """Test that Mermaid SCD contains expected elements."""
+        generator = MermaidGenerator()
+        output = generator.generate_scd(scd_model)
+
+        # Verify title
+        assert "title: BankingSystemContext" in output
+
+        # Verify system
+        assert "BankingSystem" in output
+
+        # Verify external entities
+        assert "Customer" in output
+
+        # Verify datastores (cylinder syntax)
+        assert "CustomerDB" in output
+        assert '("' in output  # Cylinder syntax
+
+        # Verify bidirectional flow
+        assert "<-->" in output

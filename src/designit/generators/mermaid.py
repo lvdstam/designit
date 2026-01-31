@@ -344,7 +344,8 @@ class MermaidGenerator:
     def _write_scd(self, scd: SCDModel, out: TextIO) -> None:
         """Write SCD to Mermaid format."""
         out.write(f"---\ntitle: {scd.name}\n---\n")
-        out.write("flowchart TB\n")
+        # Use LR (left-to-right) layout with system on left as focal point
+        out.write("flowchart LR\n")
 
         # System (double-bordered box via subgraph or special styling)
         if scd.system:

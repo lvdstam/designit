@@ -668,8 +668,8 @@ Structure charts shall be generated as Mermaid flowcharts.
 SCDs shall be generated as Mermaid flowcharts.
 
 **Acceptance Criteria:**
-- Flowchart direction: TB (top to bottom)
-- System: stadium shape `([label])` with distinct styling (bold border)
+- Flowchart direction: LR (left to right) - see REQ-GEN-008
+- System: stadium shape `[[label]]` with distinct styling (bold border)
 - Externals: rectangle shape `["label"]`
 - Datastores: cylinder shape `[("label")]`
 - Inbound flows: arrows pointing to system
@@ -677,6 +677,19 @@ SCDs shall be generated as Mermaid flowcharts.
 - Bidirectional flows: `<-->` arrows
 
 **Implementation:** `src/designit/generators/mermaid.py:MermaidGenerator.generate_scd()`
+
+---
+
+#### REQ-GEN-008: Mermaid SCD Layout [DONE]
+SCDs in Mermaid shall use left-to-right layout with the system as the focal point.
+
+**Acceptance Criteria:**
+- Flowchart direction: LR (left to right)
+- System declared first to appear on left side
+- External entities and datastores connect to system from right
+- Provides clear visual hierarchy with system as central element
+
+**Implementation:** `src/designit/generators/mermaid.py:MermaidGenerator._write_scd()`
 
 ---
 
@@ -759,13 +772,29 @@ Structure charts shall be generated as GraphViz directed graphs.
 SCDs shall be generated as GraphViz directed graphs.
 
 **Acceptance Criteria:**
-- System with bold border: `penwidth=2`
+- Uses radial layout with system centered - see REQ-GEN-057
+- System as doublecircle shape with bold border
 - Externals as rectangles: `shape=box`
 - Datastores as cylinders: `shape=cylinder`
 - Arrow direction matches flow direction
 - Bidirectional flows: `dir=both`
 
 **Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator.generate_scd()`
+
+---
+
+#### REQ-GEN-057: GraphViz SCD Radial Layout [DONE]
+SCDs in GraphViz shall use a radial layout with the system centered.
+
+**Acceptance Criteria:**
+- Uses neato layout engine for radial distribution
+- System node pinned at center position (0,0)
+- System depicted as doublecircle shape
+- External entities and datastores distributed around system
+- `overlap=false` to prevent node collision
+- `splines=true` for curved edges
+
+**Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator._write_scd()`
 
 ---
 

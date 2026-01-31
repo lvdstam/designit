@@ -297,24 +297,31 @@ class GraphVizGenerator:
         return output.getvalue()
 
     def _write_scd(self, scd: SCDModel, out: TextIO) -> None:
-        """Write SCD to DOT format."""
+        """Write SCD to DOT format with radial layout."""
         out.write(f'digraph "{self._escape(scd.name)}" {{\n')
-        out.write("  rankdir=TB;\n")
+        # Use neato layout for radial distribution around centered system
+        out.write("  layout=neato;\n")
+        out.write("  overlap=false;\n")
+        out.write("  splines=true;\n")
         out.write('  node [fontname="Helvetica"];\n')
-        out.write('  edge [fontname="Helvetica"];\n\n')
+        out.write('  edge [fontname="Helvetica", fontsize=10];\n\n')
 
-        # System (double-bordered box)
+        # System (doublecircle, pinned at center)
         if scd.system:
-            out.write("  // System\n")
+            out.write("  // System (centered)\n")
             sys = scd.system
             if not self.include_placeholders and sys.is_placeholder:
                 pass
             else:
-                style = self._placeholder_style() if sys.is_placeholder else "peripheries=2"
                 label = self._escape(sys.name)
                 if sys.description:
-                    label += f"\\n({self._escape(sys.description)})"
-                out.write(f'  "{sys.name}" [shape=box label="{label}" {style}];\n')
+                    label += f"\\n{self._escape(sys.description)}"
+                # Pin at center with pos="0,0!", use doublecircle shape
+                if sys.is_placeholder:
+                    style = 'pos="0,0!" style="dashed,filled" fillcolor=lightgray'
+                else:
+                    style = 'pos="0,0!" style=filled fillcolor=lightyellow'
+                out.write(f'  "{sys.name}" [shape=doublecircle label="{label}" {style}];\n')
 
         # External entities (rectangles)
         out.write("\n  // External Entities\n")
@@ -324,7 +331,7 @@ class GraphVizGenerator:
             style = self._placeholder_style() if ext.is_placeholder else ""
             label = self._escape(name)
             if ext.description:
-                label += f"\\n({self._escape(ext.description)})"
+                label += f"\\n{self._escape(ext.description)}"
             out.write(f'  "{name}" [shape=box label="{label}" {style}];\n')
 
         # Data stores (cylinders)

@@ -3,7 +3,7 @@
 
 scd BankingSystemContext {
     system BankingSystem {
-        description: "Core banking application handling accounts, transactions, and reporting"
+        description: "Core banking application handling\naccounts, transactions, and reporting"
     }
 
     // External entities - actors that interact with the system
