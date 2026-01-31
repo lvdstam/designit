@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from designit.parser.parser import parse_file, ParseError
-from designit.parser.ast_nodes import DocumentNode, ImportNode
+from designit.parser.ast_nodes import DocumentNode
+from designit.parser.parser import parse_file
 
 if TYPE_CHECKING:
     pass

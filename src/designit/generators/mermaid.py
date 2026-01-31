@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import TextIO
 import io
+from typing import TextIO
 
 from designit.model.base import DesignDocument
 from designit.model.dfd import DFDModel
 from designit.model.erd import ERDModel
+from designit.model.scd import SCDModel
 from designit.model.std import STDModel
 from designit.model.structure import StructureModel
-from designit.model.scd import SCDModel
 
 
 class MermaidGenerator:

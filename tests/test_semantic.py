@@ -1,9 +1,8 @@
 """Tests for semantic analysis."""
 
-import pytest
+from designit.model.base import ValidationSeverity
 from designit.semantic.analyzer import analyze_string
 from designit.semantic.validator import validate
-from designit.model.base import ValidationSeverity
 
 
 class TestSemanticAnalysis:

@@ -1,16 +1,16 @@
 """Parser module for the DesignIt DSL."""
 
-from designit.parser.parser import parse_file, parse_string
 from designit.parser.ast_nodes import (
     ASTNode,
-    DocumentNode,
-    ImportNode,
+    DataDictNode,
     DFDNode,
+    DocumentNode,
     ERDNode,
+    ImportNode,
     STDNode,
     StructureNode,
-    DataDictNode,
 )
+from designit.parser.parser import parse_file, parse_string
 
 __all__ = [
     "parse_file",

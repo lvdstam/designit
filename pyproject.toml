@@ -36,7 +36,20 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+select = ["E", "F", "I", "N", "W", "UP", "Q"]
+
+[tool.ruff.lint.per-file-ignores]
+# Lark parser requires uppercase method names for token handlers
+"src/designit/parser/parser.py" = ["N802"]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+docstring-quotes = "double"
+multiline-quotes = "double"
+
+[tool.ruff.format]
+quote-style = "double"
+docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.13"

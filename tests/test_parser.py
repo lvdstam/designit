@@ -1,16 +1,11 @@
 """Tests for the DesignIt parser."""
 
 import pytest
-from designit.parser.parser import parse_string, ParseError
+
 from designit.parser.ast_nodes import (
     DocumentNode,
-    DFDNode,
-    ERDNode,
-    STDNode,
-    StructureNode,
-    DataDictNode,
-    SCDNode,
 )
+from designit.parser.parser import ParseError, parse_string
 
 
 class TestParserBasics:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Union
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from designit.model.base import BaseElement
@@ -78,7 +78,7 @@ class TypeReference(BaseModel):
 
 
 # Union of all type definitions
-TypeDefinition = Union[StructType, UnionType, ArrayType, TypeReference, None]
+TypeDefinition = StructType | UnionType | ArrayType | TypeReference | None
 
 
 class DataDefinition(BaseElement):

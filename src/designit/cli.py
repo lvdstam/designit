@@ -8,16 +8,15 @@ from typing import Literal
 
 import click
 from rich.console import Console
-from rich.table import Table
-from rich.syntax import Syntax
 from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.table import Table
 
-from designit.semantic.analyzer import analyze_file
-from designit.semantic.validator import validate
 from designit.generators.graphviz import generate_graphviz
 from designit.generators.mermaid import generate_mermaid
 from designit.model.base import ValidationSeverity
-
+from designit.semantic.analyzer import analyze_file
+from designit.semantic.validator import validate
 
 console = Console()
 error_console = Console(stderr=True)

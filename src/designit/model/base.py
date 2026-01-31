@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from enum import Enum
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
-    from designit.parser.ast_nodes import DocumentNode
+    pass
 
 
 class DiagramType(str, Enum):
@@ -67,12 +66,12 @@ class DesignDocument(BaseModel):
 
     name: str
     files: list[str] = Field(default_factory=list)
-    scds: dict[str, "SCDModel"] = Field(default_factory=dict)
-    dfds: dict[str, "DFDModel"] = Field(default_factory=dict)
-    erds: dict[str, "ERDModel"] = Field(default_factory=dict)
-    stds: dict[str, "STDModel"] = Field(default_factory=dict)
-    structures: dict[str, "StructureModel"] = Field(default_factory=dict)
-    data_dictionary: "DataDictionaryModel | None" = None
+    scds: dict[str, SCDModel] = Field(default_factory=dict)
+    dfds: dict[str, DFDModel] = Field(default_factory=dict)
+    erds: dict[str, ERDModel] = Field(default_factory=dict)
+    stds: dict[str, STDModel] = Field(default_factory=dict)
+    structures: dict[str, StructureModel] = Field(default_factory=dict)
+    data_dictionary: DataDictionaryModel | None = None
     validation_messages: list[ValidationMessage] = Field(default_factory=list)
 
     @property
@@ -130,12 +129,12 @@ class DesignDocument(BaseModel):
 
 
 # Forward references for type hints
-from designit.model.scd import SCDModel  # noqa: E402
+from designit.model.datadict import DataDictionaryModel  # noqa: E402
 from designit.model.dfd import DFDModel  # noqa: E402
 from designit.model.erd import ERDModel  # noqa: E402
+from designit.model.scd import SCDModel  # noqa: E402
 from designit.model.std import STDModel  # noqa: E402
 from designit.model.structure import StructureModel  # noqa: E402
-from designit.model.datadict import DataDictionaryModel  # noqa: E402
 
 # Update forward references
 DesignDocument.model_rebuild()

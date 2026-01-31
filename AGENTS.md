@@ -2,6 +2,11 @@
 
 A Domain-Specific Language (DSL) for creating Yourdon-style design documents. See [Structured Analysis](https://en.wikipedia.org/wiki/Structured_analysis) for more details. DesignIt allows you to define system designs using a clean, text-based syntax that can be version-controlled, validated, and transformed into visual diagrams.
 
+## Agent Instructions
+
+- **Ask before running commands:** Always ask permission before executing shell commands. Show the user the commands you plan to run and let them execute the commands themselves if they prefer.
+- **Ask before making changes:** For significant changes, explain what you plan to do and get confirmation before proceeding.
+
 ## External Documentation
 
 For detailed feature requirements and acceptance criteria, see: @docs/requirements.md
@@ -67,7 +72,8 @@ designit/
 - **Line length:** 100 characters (configured in ruff)
 - **Target version:** Python 3.13
 - **Type hints:** Required everywhere (mypy strict mode)
-- **Linting:** Ruff with rules: E, F, I, N, W, UP
+- **Linting:** Ruff with rules: E, F, I, N, W, UP, Q
+- **Quote style:** Double quotes for all strings (enforced by ruff Q rules and formatter)
 
 ### Model Classes
 

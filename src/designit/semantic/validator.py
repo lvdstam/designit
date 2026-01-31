@@ -129,14 +129,16 @@ class Validator:
             for rel_name, rel in erd.relationships.items():
                 if rel.source_entity not in erd.entities:
                     self._error(
-                        f"Relationship '{rel_name}' references unknown entity '{rel.source_entity}'",
+                        f"Relationship '{rel_name}' references "
+                        f"unknown entity '{rel.source_entity}'",
                         rel_name,
                         rel.source_file,
                         rel.line,
                     )
                 if rel.target_entity not in erd.entities:
                     self._error(
-                        f"Relationship '{rel_name}' references unknown entity '{rel.target_entity}'",
+                        f"Relationship '{rel_name}' references "
+                        f"unknown entity '{rel.target_entity}'",
                         rel_name,
                         rel.source_file,
                         rel.line,
@@ -151,7 +153,8 @@ class Validator:
                             and constraint.target_entity not in erd.entities
                         ):
                             self._error(
-                                f"FK in '{entity_name}.{attr_name}' references unknown entity '{constraint.target_entity}'",
+                                f"FK in '{entity_name}.{attr_name}' references "
+                                f"unknown entity '{constraint.target_entity}'",
                                 f"{entity_name}.{attr_name}",
                                 entity.source_file,
                                 entity.line,
@@ -174,14 +177,16 @@ class Validator:
             for trans_name, trans in std.transitions.items():
                 if trans.source_state not in std.states:
                     self._error(
-                        f"Transition '{trans_name}' references unknown state '{trans.source_state}'",
+                        f"Transition '{trans_name}' references "
+                        f"unknown state '{trans.source_state}'",
                         trans_name,
                         trans.source_file,
                         trans.line,
                     )
                 if trans.target_state not in std.states:
                     self._error(
-                        f"Transition '{trans_name}' references unknown state '{trans.target_state}'",
+                        f"Transition '{trans_name}' references "
+                        f"unknown state '{trans.target_state}'",
                         trans_name,
                         trans.source_file,
                         trans.line,

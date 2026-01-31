@@ -5,69 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from designit.parser.ast_nodes import (
-    AttributeNode,
-    BlockNode,
-    CardinalityNode,
-    ConstraintNode,
-    DataDefNode,
-    DataDictNode,
-    DatastoreNode,
-    DFDNode,
-    DocumentNode,
-    EntityNode,
-    ERDNode,
-    ExternalNode,
-    FlowNode,
-    ModuleNode,
-    PlaceholderNode,
-    ProcessNode,
-    PropertyNode,
-    RelationshipNode,
-    SCDFlowNode,
-    SCDNode,
-    StateNode,
-    STDNode,
-    StructDefNode,
-    StructFieldNode,
-    StructureNode,
-    SystemNode,
-    TransitionNode,
-    ArrayDefNode,
-    UnionDefNode,
-    TypeRefNode,
-    FieldConstraintNode,
-)
 from designit.model.base import (
     DesignDocument,
     ElementReference,
     ValidationMessage,
     ValidationSeverity,
-)
-from designit.model.dfd import (
-    DFDModel,
-    DataFlow,
-    Datastore,
-    ExternalEntity,
-    Process,
-)
-from designit.model.erd import (
-    Attribute,
-    AttributeConstraint,
-    Cardinality,
-    ConstraintType,
-    Entity,
-    ERDModel,
-    Relationship,
-)
-from designit.model.std import (
-    State,
-    STDModel,
-    Transition,
-)
-from designit.model.structure import (
-    Module,
-    StructureModel,
 )
 from designit.model.datadict import (
     ArrayType,
@@ -80,12 +22,64 @@ from designit.model.datadict import (
     TypeReference,
     UnionType,
 )
+from designit.model.dfd import (
+    DataFlow,
+    Datastore,
+    DFDModel,
+    ExternalEntity,
+    Process,
+)
+from designit.model.erd import (
+    Attribute,
+    AttributeConstraint,
+    Cardinality,
+    ConstraintType,
+    Entity,
+    ERDModel,
+    Relationship,
+)
 from designit.model.scd import (
     SCDDatastore,
     SCDExternalEntity,
     SCDFlow,
     SCDModel,
     System,
+)
+from designit.model.std import (
+    State,
+    STDModel,
+    Transition,
+)
+from designit.model.structure import (
+    Module,
+    StructureModel,
+)
+from designit.parser.ast_nodes import (
+    ArrayDefNode,
+    AttributeNode,
+    BlockNode,
+    CardinalityNode,
+    ConstraintNode,
+    DataDefNode,
+    DataDictNode,
+    DFDNode,
+    DocumentNode,
+    EntityNode,
+    ERDNode,
+    FieldConstraintNode,
+    ModuleNode,
+    PlaceholderNode,
+    RelationshipNode,
+    SCDNode,
+    StateNode,
+    STDNode,
+    StructDefNode,
+    StructFieldNode,
+    StructureNode,
+    SystemNode,
+    TransitionNode,
+    TypeRefNode,
+    UnionDefNode,
 )
 from designit.semantic.resolver import resolve_imports
 

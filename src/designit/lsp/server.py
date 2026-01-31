@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 
 from lsprotocol import types as lsp
 from pygls.lsp.server import LanguageServer
 from pygls.workspace import TextDocument
 
-from designit.parser.parser import parse_string, ParseError
+from designit.model.base import ValidationSeverity
+from designit.parser.parser import ParseError
 from designit.semantic.analyzer import analyze_string
 from designit.semantic.validator import validate
-from designit.model.base import ValidationSeverity
-
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -130,9 +128,7 @@ def did_close(params: lsp.DidCloseTextDocumentParams) -> None:
     uri = params.text_document.uri
     if uri in _document_cache:
         del _document_cache[uri]
-    server.text_document_publish_diagnostics(
-        lsp.PublishDiagnosticsParams(uri=uri, diagnostics=[])
-    )
+    server.text_document_publish_diagnostics(lsp.PublishDiagnosticsParams(uri=uri, diagnostics=[]))
 
 
 # ============================================
@@ -202,7 +198,7 @@ def completion(params: lsp.CompletionParams) -> lsp.CompletionList:
                     detail="Built-in type",
                 )
             )
-    elif "[" in line_prefix and not "]" in line_prefix:
+    elif "[" in line_prefix and "]" not in line_prefix:
         # Inside constraints
         for constraint in CONSTRAINTS:
             items.append(

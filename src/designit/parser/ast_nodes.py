@@ -7,6 +7,7 @@ before it's transformed into the semantic model.
 from __future__ import annotations
 
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 

@@ -5,12 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from lark import Lark, Transformer, v_args, Token, Tree
+from lark import Lark, Token, Transformer, v_args
 from lark.exceptions import UnexpectedInput
 
 from designit.parser.ast_nodes import (
-    ASTNode,
     ArrayDefNode,
+    ASTNode,
     AttributeNode,
     BlockNode,
     CardinalityNode,
@@ -45,7 +45,6 @@ from designit.parser.ast_nodes import (
     TypeRefNode,
     UnionDefNode,
 )
-
 
 # Path to the grammar file
 GRAMMAR_PATH = Path(__file__).parent.parent / "grammar" / "designit.lark"
