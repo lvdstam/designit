@@ -32,9 +32,10 @@ class TestSemanticAnalysis:
         assert dfd.refines.diagram_name == "Context"
         assert dfd.refines.element_name == "TestSystem"
         assert "Handle" in dfd.processes
-        assert "Request" in dfd.flows
+        # Verify flow exists using compound key
+        assert ("Request", "inbound") in dfd.flows
         # Verify flow type
-        assert dfd.flows["Request"].flow_type == "inbound"
+        assert dfd.flows[("Request", "inbound")].flow_type == "inbound"
 
     def test_analyze_erd(self) -> None:
         """Test ERD analysis."""
@@ -1497,3 +1498,209 @@ dfd Test {
         coverage_error = next((e for e in errors if "Request" in e.message), None)
         assert coverage_error is not None, "Should have error about missing Request flow"
         assert coverage_error.line is not None, "Coverage error should have line number"
+
+
+class TestDFDFlowCompoundKeys:
+    """Tests for DFD flow compound key storage (REQ-MODEL-010)."""
+
+    def test_same_name_different_types_coexist(self) -> None:
+        """Two flows with same name but different types should coexist."""
+        source = """
+        datadict {
+            I_PicIX = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external PicIX {}
+            flow I_PicIX: PicIX <-> Sys
+        }
+        dfd Test {
+            refines: Context.Sys
+            process Handler {}
+            flow I_PicIX: -> Handler
+            flow I_PicIX: Handler ->
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Test"]
+
+        # Both flows should exist with compound keys
+        assert ("I_PicIX", "inbound") in dfd.flows
+        assert ("I_PicIX", "outbound") in dfd.flows
+
+        # They should be different flow objects
+        inbound = dfd.flows[("I_PicIX", "inbound")]
+        outbound = dfd.flows[("I_PicIX", "outbound")]
+        assert inbound.flow_type == "inbound"
+        assert outbound.flow_type == "outbound"
+        assert inbound.target is not None
+        assert inbound.target.name == "Handler"
+        assert outbound.source is not None
+        assert outbound.source.name == "Handler"
+
+    def test_internal_flow_uses_compound_key(self) -> None:
+        """Internal flows should also use compound keys."""
+        source = """
+        datadict {
+            Data = { value: string }
+        }
+        scd Context {
+            system Sys {}
+            external E {}
+            flow Data: E -> Sys
+        }
+        dfd Test {
+            refines: Context.Sys
+            process A {}
+            process B {}
+            flow Data: -> A
+            flow InternalFlow: A -> B
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Test"]
+
+        # Internal flow should use compound key
+        assert ("InternalFlow", "internal") in dfd.flows
+        internal = dfd.flows[("InternalFlow", "internal")]
+        assert internal.flow_type == "internal"
+        assert internal.source.name == "A"
+        assert internal.target.name == "B"
+
+    def test_duplicate_flow_same_name_and_type_warning(self) -> None:
+        """Duplicate flow with same name AND type should produce validation error."""
+        source = """
+        datadict {
+            Request = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external E {}
+            flow Request: E -> Sys
+        }
+        dfd Test {
+            refines: Context.Sys
+            process A {}
+            process B {}
+            flow Request: -> A
+            flow Request: -> B
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+
+        # Should have an error about inbound flow handled by multiple processes
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        duplicate_error = next(
+            (e for e in errors if "multiple processes" in e.message and "Request" in e.message),
+            None,
+        )
+        assert duplicate_error is not None, "Should error about flow handled by multiple processes"
+
+
+class TestDFDFlowHelperMethods:
+    """Tests for DFD flow helper methods (REQ-MODEL-011)."""
+
+    def test_get_flow_returns_correct_flow(self) -> None:
+        """get_flow should return the correct flow by name and type."""
+        source = """
+        datadict {
+            I_PicIX = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external PicIX {}
+            flow I_PicIX: PicIX <-> Sys
+        }
+        dfd Test {
+            refines: Context.Sys
+            process Handler {}
+            flow I_PicIX: -> Handler
+            flow I_PicIX: Handler ->
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Test"]
+
+        inbound = dfd.get_flow("I_PicIX", "inbound")
+        assert inbound is not None
+        assert inbound.flow_type == "inbound"
+
+        outbound = dfd.get_flow("I_PicIX", "outbound")
+        assert outbound is not None
+        assert outbound.flow_type == "outbound"
+
+    def test_get_flow_returns_none_for_nonexistent(self) -> None:
+        """get_flow should return None for nonexistent flow."""
+        source = """
+        datadict {
+            Request = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external E {}
+            flow Request: E -> Sys
+        }
+        dfd Test {
+            refines: Context.Sys
+            process Handler {}
+            flow Request: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Test"]
+
+        # Nonexistent flow name
+        assert dfd.get_flow("NonExistent", "inbound") is None
+
+        # Existing name but wrong type
+        assert dfd.get_flow("Request", "outbound") is None
+
+    def test_get_flows_by_name_returns_all_matching(self) -> None:
+        """get_flows_by_name should return all flows with that name."""
+        source = """
+        datadict {
+            I_PicIX = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external PicIX {}
+            flow I_PicIX: PicIX <-> Sys
+        }
+        dfd Test {
+            refines: Context.Sys
+            process Handler {}
+            flow I_PicIX: -> Handler
+            flow I_PicIX: Handler ->
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Test"]
+
+        flows = dfd.get_flows_by_name("I_PicIX")
+        assert len(flows) == 2
+        flow_types = {f.flow_type for f in flows}
+        assert flow_types == {"inbound", "outbound"}
+
+    def test_get_flows_by_name_returns_empty_for_nonexistent(self) -> None:
+        """get_flows_by_name should return empty list for nonexistent name."""
+        source = """
+        datadict {
+            Request = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external E {}
+            flow Request: E -> Sys
+        }
+        dfd Test {
+            refines: Context.Sys
+            process Handler {}
+            flow Request: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Test"]
+
+        flows = dfd.get_flows_by_name("NonExistent")
+        assert flows == []

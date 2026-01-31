@@ -602,7 +602,7 @@ All placeholders shall be reported as informational messages.
 
 ### 2.2.1 DFD Hierarchical Decomposition
 
-#### REQ-SEM-080: DFD Refinement Declaration [TODO]
+#### REQ-SEM-080: DFD Refinement Declaration [DONE]
 Every DFD shall declare what parent element it refines using the `refines` keyword.
 
 **Acceptance Criteria:**
@@ -618,7 +618,7 @@ Every DFD shall declare what parent element it refines using the `refines` keywo
 
 ---
 
-#### REQ-SEM-081: Refinement Parent Resolution [TODO]
+#### REQ-SEM-081: Refinement Parent Resolution [DONE]
 The parent reference in a `refines` declaration shall be resolved and validated.
 
 **Acceptance Criteria:**
@@ -631,7 +631,7 @@ The parent reference in a `refines` declaration shall be resolved and validated.
 
 ---
 
-#### REQ-SEM-082: Refinement Inbound Flow Coverage [TODO]
+#### REQ-SEM-082: Refinement Inbound Flow Coverage [DONE]
 Each inbound flow to the parent element must be handled by exactly one process in the child DFD.
 
 **Acceptance Criteria:**
@@ -644,7 +644,7 @@ Each inbound flow to the parent element must be handled by exactly one process i
 
 ---
 
-#### REQ-SEM-083: Refinement Outbound Flow Coverage [TODO]
+#### REQ-SEM-083: Refinement Outbound Flow Coverage [DONE]
 Each outbound flow from the parent element may be handled by zero or more processes in the child DFD.
 
 **Acceptance Criteria:**
@@ -657,7 +657,7 @@ Each outbound flow from the parent element may be handled by zero or more proces
 
 ---
 
-#### REQ-SEM-084: DFD Boundary Flow Syntax [TODO]
+#### REQ-SEM-084: DFD Boundary Flow Syntax [DONE]
 DFDs shall support boundary flows with a single endpoint.
 
 **Acceptance Criteria:**
@@ -675,7 +675,7 @@ DFDs shall support boundary flows with a single endpoint.
 
 ---
 
-#### REQ-SEM-085: DFD Local Datastores [TODO]
+#### REQ-SEM-085: DFD Local Datastores [DONE]
 DFDs may declare local datastores that are internal to that abstraction level.
 
 **Acceptance Criteria:**
@@ -688,7 +688,7 @@ DFDs may declare local datastores that are internal to that abstraction level.
 
 ---
 
-#### REQ-SEM-086: DFD Datastore Inheritance [TODO]
+#### REQ-SEM-086: DFD Datastore Inheritance [DONE]
 Child DFDs can reference datastores from the entire parent tree via boundary flows.
 
 **Acceptance Criteria:**
@@ -701,7 +701,7 @@ Child DFDs can reference datastores from the entire parent tree via boundary flo
 
 ---
 
-#### REQ-SEM-087: No Duplicate Element Names [TODO]
+#### REQ-SEM-087: No Duplicate Element Names [DONE]
 Element names must be unique across the entire import tree.
 
 **Acceptance Criteria:**
@@ -713,7 +713,7 @@ Element names must be unique across the entire import tree.
 
 ---
 
-#### REQ-SEM-088: DFD Contains No External Entities [TODO]
+#### REQ-SEM-088: DFD Contains No External Entities [DONE]
 DFDs shall not declare external entities.
 
 **Acceptance Criteria:**
@@ -976,6 +976,97 @@ Placeholder elements shall be visually distinct in generated diagrams.
 - Distinguishes incomplete elements from complete ones
 
 **Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator` (placeholder styling in all generate methods)
+
+---
+
+### 3.3 DFD Boundary Flow Rendering
+
+#### REQ-GEN-010: DFD Boundary Flow Rendering [DONE]
+DFD boundary flows shall be rendered with invisible boundary marker nodes.
+
+**Acceptance Criteria:**
+- Inbound boundary flows (`flow Name: -> Target`) rendered with invisible source node
+- Outbound boundary flows (`flow Name: Source ->`) rendered with invisible target node
+- Boundary nodes use minimal styling (small point/circle)
+- Boundary nodes styled distinctly (dashed stroke, gray color)
+- Internal flows (both endpoints present) rendered normally as before
+
+**Implementation:**
+- `src/designit/generators/mermaid.py:MermaidGenerator._write_dfd()`
+- `src/designit/generators/graphviz.py:GraphVizGenerator._write_dfd()`
+
+---
+
+#### REQ-GEN-011: Mermaid DFD Boundary Node Styling [DONE]
+Mermaid DFD boundary nodes shall use consistent minimal styling.
+
+**Acceptance Criteria:**
+- Boundary nodes use small circle shape: `(( ))`
+- Boundary nodes assigned CSS class: `:::boundary`
+- Class definition: `classDef boundary fill:none,stroke:#666,stroke-dasharray:3`
+- Node IDs prefixed with `_boundary_` to avoid conflicts
+
+**Implementation:** `src/designit/generators/mermaid.py:MermaidGenerator._write_dfd()`
+
+---
+
+#### REQ-GEN-012: GraphViz DFD Boundary Node Styling [DONE]
+GraphViz DFD boundary nodes shall use consistent minimal styling.
+
+**Acceptance Criteria:**
+- Boundary nodes use point shape: `shape=point`
+- Boundary nodes have no label: `label=""`
+- Boundary nodes are small: `width=0.15`
+- Node IDs prefixed with `_boundary_` to avoid conflicts
+
+**Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator._write_dfd()`
+
+---
+
+#### REQ-GEN-013: Bidirectional Boundary Flow Rendering [DONE]
+When the same process handles both inbound and outbound boundary flows for the same flow name, generators shall render a single bidirectional edge.
+
+**Acceptance Criteria:**
+- Detect when same process is target of inbound AND source of outbound for same flow name
+- Render single boundary node (not two)
+- Mermaid: Render as `_boundary_FlowName <-->|"FlowName"| Process`
+- GraphViz: Render as single edge with `dir=both`
+- Label shows flow name once
+- When different processes handle in/out, render as two separate edges
+
+**Implementation:**
+- `src/designit/generators/mermaid.py:MermaidGenerator._write_dfd()`
+- `src/designit/generators/graphviz.py:GraphVizGenerator._write_dfd()`
+
+---
+
+### 3.4 Model Requirements
+
+#### REQ-MODEL-010: DFD Flow Compound Key Storage [DONE]
+DFD flows shall be stored using a compound key of (name, flow_type) to allow multiple flows with the same name but different directions.
+
+**Acceptance Criteria:**
+- Flow key is tuple of (flow_name, flow_type)
+- `FlowType` type alias defined as `Literal["internal", "inbound", "outbound"]`
+- `FlowKey` type alias defined as `tuple[str, FlowType]`
+- Two boundary flows with same name but different types coexist in the dictionary
+- Example: `("I_PicIX", "inbound")` and `("I_PicIX", "outbound")` are distinct keys
+
+**Implementation:**
+- `src/designit/model/dfd.py:DFDModel.flows`
+- `src/designit/semantic/analyzer.py:SemanticAnalyzer._analyze_dfd()`
+
+---
+
+#### REQ-MODEL-011: DFD Flow Helper Methods [DONE]
+DFDModel shall provide helper methods for convenient flow access.
+
+**Acceptance Criteria:**
+- `get_flow(name, flow_type)` returns a single flow or None
+- `get_flows_by_name(name)` returns all flows with that name (list)
+- Helper methods abstract the compound key implementation
+
+**Implementation:** `src/designit/model/dfd.py:DFDModel`
 
 ---
 

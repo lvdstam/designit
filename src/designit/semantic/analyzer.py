@@ -27,6 +27,8 @@ from designit.model.dfd import (
     Datastore,
     DFDModel,
     ExternalEntity,
+    FlowKey,
+    FlowType,
     Process,
     RefinesRef,
 )
@@ -227,6 +229,7 @@ class SemanticAnalyzer:
 
         for flow in node.flows:
             # Determine flow type based on source/target presence
+            flow_type: FlowType
             if flow.source is None and flow.target is not None:
                 # Boundary inbound flow: -> Target
                 flow_type = "inbound"
@@ -255,9 +258,10 @@ class SemanticAnalyzer:
                 source_file=source_file,
                 line=flow.location.line if flow.location else None,
             )
-            if flow.name in model.flows:
-                self._warning(f"Duplicate flow: {flow.name}", flow.name)
-            model.flows[flow.name] = data_flow
+            flow_key: FlowKey = (flow.name, flow_type)
+            if flow_key in model.flows:
+                self._warning(f"Duplicate flow: {flow.name} ({flow_type})", flow.name)
+            model.flows[flow_key] = data_flow
 
         # Store inbound handler counts in metadata for later validation
         # We'll add an attribute to track this

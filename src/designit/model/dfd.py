@@ -8,6 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from designit.model.base import BaseElement, ElementReference
 
+# Type aliases for flow keys
+FlowType = Literal["internal", "inbound", "outbound"]
+FlowKey = tuple[str, FlowType]
+
 
 class ExternalEntity(BaseElement):
     """An external entity in a DFD."""
@@ -52,7 +56,7 @@ class DataFlow(BaseModel):
     name: str
     source: ElementReference | None = None
     target: ElementReference | None = None
-    flow_type: Literal["internal", "inbound", "outbound"] = "internal"
+    flow_type: FlowType = "internal"
     description: str | None = None
     source_file: str | None = None
     line: int | None = None
@@ -63,6 +67,10 @@ class DFDModel(BaseModel):
 
     DFDs must refine a system (from SCD) or a process (from parent DFD).
     DFDs contain NO external entities - externals exist only at the SCD level.
+
+    Flows are stored with compound keys (name, flow_type) to allow multiple
+    flows with the same name but different directions (e.g., bidirectional
+    parent flow decomposed into inbound + outbound).
     """
 
     model_config = ConfigDict(extra="allow")  # Allow extra attributes like _inbound_flow_handlers
@@ -73,9 +81,35 @@ class DFDModel(BaseModel):
     externals: dict[str, ExternalEntity] = Field(default_factory=dict)  # Kept for backward compat
     processes: dict[str, Process] = Field(default_factory=dict)
     datastores: dict[str, Datastore] = Field(default_factory=dict)
-    flows: dict[str, DataFlow] = Field(default_factory=dict)
+    flows: dict[FlowKey, DataFlow] = Field(default_factory=dict)
     source_file: str | None = None
     line: int | None = None
+
+    def get_flow(self, name: str, flow_type: FlowType) -> DataFlow | None:
+        """Get a specific flow by name and type.
+
+        Args:
+            name: The flow name.
+            flow_type: The flow type ('internal', 'inbound', or 'outbound').
+
+        Returns:
+            The DataFlow if found, None otherwise.
+        """
+        return self.flows.get((name, flow_type))
+
+    def get_flows_by_name(self, name: str) -> list[DataFlow]:
+        """Get all flows with a given name.
+
+        This is useful when a bidirectional parent flow is decomposed into
+        separate inbound and outbound flows with the same name.
+
+        Args:
+            name: The flow name to search for.
+
+        Returns:
+            List of DataFlow objects with that name (may be empty).
+        """
+        return [flow for (n, _), flow in self.flows.items() if n == name]
 
     def get_element(self, name: str) -> ExternalEntity | Process | Datastore | None:
         """Get an element by name from any category."""

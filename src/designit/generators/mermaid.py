@@ -86,13 +86,64 @@ class MermaidGenerator:
                 label += f"<br/>{self._escape(ds.description)}"
             out.write(f'    {safe_id}[("{label}")]\n')
 
+        # Detect bidirectional boundary flows (same process handles both in and out)
+        # Key: flow_name -> process_name (if same process for both directions)
+        bidirectional_flows: dict[str, str] = {}
+        inbound_targets: dict[str, str] = {}  # flow_name -> target process
+        outbound_sources: dict[str, str] = {}  # flow_name -> source process
+
+        for (flow_name, flow_type), flow in dfd.flows.items():
+            if flow_type == "inbound" and flow.target:
+                inbound_targets[flow_name] = flow.target.name
+            elif flow_type == "outbound" and flow.source:
+                outbound_sources[flow_name] = flow.source.name
+
+        # Find flows where same process handles both directions
+        for flow_name in inbound_targets:
+            if flow_name in outbound_sources:
+                if inbound_targets[flow_name] == outbound_sources[flow_name]:
+                    bidirectional_flows[flow_name] = inbound_targets[flow_name]
+
+        # Boundary nodes for boundary flows (invisible markers)
+        # Only create one node for bidirectional flows
+        boundary_nodes: set[str] = set()
+        for (flow_name, flow_type), flow in dfd.flows.items():
+            if flow_type in ("inbound", "outbound"):
+                # Skip if this is part of a bidirectional pair and we're on the outbound
+                # (we'll handle it with the inbound)
+                if flow_name in bidirectional_flows and flow_type == "outbound":
+                    continue
+                boundary_id = f"_boundary_{self._safe_id(flow_name)}"
+                if boundary_id not in boundary_nodes:
+                    boundary_nodes.add(boundary_id)
+                    out.write(f"    {boundary_id}(( )):::boundary\n")
+
         # Data flows (edges)
         out.write("\n")
-        for name, flow in dfd.flows.items():
-            source_id = self._safe_id(flow.source.name)
-            target_id = self._safe_id(flow.target.name)
-            label = self._escape(name)
-            out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+        rendered_bidirectional: set[str] = set()
+        for (flow_name, flow_type), flow in dfd.flows.items():
+            label = self._escape(flow_name)
+
+            # Handle bidirectional case
+            if flow_name in bidirectional_flows:
+                if flow_name in rendered_bidirectional:
+                    continue  # Already rendered this bidirectional flow
+                rendered_bidirectional.add(flow_name)
+                boundary_id = f"_boundary_{self._safe_id(flow_name)}"
+                process_id = self._safe_id(bidirectional_flows[flow_name])
+                out.write(f'    {boundary_id} <-->|"{label}"| {process_id}\n')
+            elif flow_type == "inbound":
+                source_id = f"_boundary_{self._safe_id(flow_name)}"
+                target_id = self._safe_id(flow.target.name)
+                out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+            elif flow_type == "outbound":
+                source_id = self._safe_id(flow.source.name)
+                target_id = f"_boundary_{self._safe_id(flow_name)}"
+                out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+            else:  # internal
+                source_id = self._safe_id(flow.source.name)
+                target_id = self._safe_id(flow.target.name)
+                out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
 
         # Style placeholders
         if self.include_placeholders:
@@ -111,6 +162,10 @@ class MermaidGenerator:
                 out.write("\n")
                 for pid in placeholder_ids:
                     out.write(f"    style {pid} stroke-dasharray: 5 5\n")
+
+        # Add boundary class definition if we have boundary nodes
+        if boundary_nodes:
+            out.write("\n    classDef boundary fill:none,stroke:#666,stroke-dasharray:3\n")
 
     # ============================================
     # ERD Generation

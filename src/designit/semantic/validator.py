@@ -167,7 +167,7 @@ class Validator:
                 set(dfd.externals.keys()) | set(dfd.processes.keys()) | set(dfd.datastores.keys())
             )
 
-            for flow_name, flow in dfd.flows.items():
+            for (flow_name, _flow_type), flow in dfd.flows.items():
                 # For boundary flows, source or target may be None
                 if flow.source is not None and flow.source.name not in all_elements:
                     self._error(
@@ -244,7 +244,7 @@ class Validator:
                             parent_outbound_flows[flow_name] = "outbound"
             elif parent_dfd:
                 process_name = element_name
-                for flow_name, flow in parent_dfd.flows.items():
+                for (flow_name, _flow_type), flow in parent_dfd.flows.items():
                     if flow.target and flow.target.name == process_name:
                         parent_inbound_flows[flow_name] = "inbound"
                     if flow.source and flow.source.name == process_name:
@@ -256,7 +256,7 @@ class Validator:
             )
 
             # Check for direction mismatches in declared flows
-            for flow_name, flow in dfd.flows.items():
+            for (flow_name, _flow_type), flow in dfd.flows.items():
                 if flow.flow_type == "inbound":
                     # Check for direction mismatch with parent
                     if flow_name in parent_outbound_flows:
