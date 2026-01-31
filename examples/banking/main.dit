@@ -1,6 +1,7 @@
 // Banking System - Main Design Document
 // This demonstrates a multi-file design using DesignIt DSL
 
+import "./context.dit"
 import "./accounts.dit"
 import "./transactions.dit"
 

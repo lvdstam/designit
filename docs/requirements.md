@@ -54,7 +54,7 @@ The DSL shall support importing other `.dit` files to enable multi-file projects
 
 ### 1.2 Diagram Types
 
-#### REQ-GRAM-005: System Context Diagrams (SCD) [TODO]
+#### REQ-GRAM-005: System Context Diagrams (SCD) [DONE]
 The DSL shall support System Context Diagram definitions using the `scd` keyword. The SCD is the top-level diagram in Structured Analysis that depicts the system in its context.
 
 **Acceptance Criteria:**
@@ -379,7 +379,7 @@ The system shall transform the parsed AST into a rich semantic model.
 
 ### 2.2 Validation Rules
 
-#### REQ-SEM-005: SCD System Validation [TODO]
+#### REQ-SEM-005: SCD System Validation [DONE]
 Each SCD shall have exactly one system declaration.
 
 **Acceptance Criteria:**
@@ -390,7 +390,7 @@ Each SCD shall have exactly one system declaration.
 
 ---
 
-#### REQ-SEM-006: SCD Flow Endpoint Validation [TODO]
+#### REQ-SEM-006: SCD Flow Endpoint Validation [DONE]
 SCD flow endpoints shall reference existing elements.
 
 **Acceptance Criteria:**
@@ -402,7 +402,7 @@ SCD flow endpoints shall reference existing elements.
 
 ---
 
-#### REQ-SEM-007: SCD Orphan Element Warning [TODO]
+#### REQ-SEM-007: SCD Orphan Element Warning [DONE]
 Elements not connected by any flow shall generate a warning.
 
 **Acceptance Criteria:**
@@ -664,7 +664,7 @@ Structure charts shall be generated as Mermaid flowcharts.
 
 ---
 
-#### REQ-GEN-007: Mermaid SCD Generation [TODO]
+#### REQ-GEN-007: Mermaid SCD Generation [DONE]
 SCDs shall be generated as Mermaid flowcharts.
 
 **Acceptance Criteria:**
@@ -755,7 +755,7 @@ Structure charts shall be generated as GraphViz directed graphs.
 
 ---
 
-#### REQ-GEN-056: GraphViz SCD Generation [TODO]
+#### REQ-GEN-056: GraphViz SCD Generation [DONE]
 SCDs shall be generated as GraphViz directed graphs.
 
 **Acceptance Criteria:**
@@ -1336,6 +1336,13 @@ The extension shall be licensed under MIT license.
 - Invalid entity reference produces error
 - Orphan element produces warning
 - Missing primary key produces warning
+
+### Example Tests (`tests/test_examples.py`)
+- Banking example parses with all imports resolved
+- Banking example has no validation errors
+- SCD structure validation (system, externals, datastores, flows)
+- SCD flow direction validation (inbound, outbound, bidirectional)
+- Context file standalone parsing
 
 ---
 

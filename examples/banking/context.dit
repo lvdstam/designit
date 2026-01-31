@@ -1,0 +1,57 @@
+// Banking System - System Context Diagram
+// Shows the banking system's boundary and external interactions
+
+scd BankingSystemContext {
+    system BankingSystem {
+        description: "Core banking application handling accounts, transactions, and reporting"
+    }
+
+    // External entities - actors that interact with the system
+    external Customer {
+        description: "Bank customer using online/mobile banking"
+    }
+
+    external BankTeller {
+        description: "Bank employee at branch locations"
+    }
+
+    external ExternalBank {
+        description: "Other financial institutions for interbank transfers"
+    }
+
+    external RegulatoryAuthority {
+        description: "Financial regulatory body requiring compliance reports"
+    }
+
+    // Data stores - external data repositories
+    datastore CustomerDB {
+        description: "Customer and account data storage"
+    }
+
+    datastore TransactionLog {
+        description: "Audit trail of all transactions"
+    }
+
+    // Customer interactions (online/mobile banking)
+    flow LoginRequest: Customer -> BankingSystem
+    flow AccountInfo: BankingSystem -> Customer
+    flow TransactionRequest: Customer -> BankingSystem
+    flow TransactionConfirmation: BankingSystem -> Customer
+
+    // Teller interactions (branch operations)
+    flow TellerQuery: BankTeller -> BankingSystem
+    flow CustomerData: BankingSystem -> BankTeller
+
+    // External bank transfers (bidirectional)
+    flow TransferData: BankingSystem <-> ExternalBank
+
+    // Regulatory compliance
+    flow ComplianceReport: BankingSystem -> RegulatoryAuthority
+    flow AuditRequest: RegulatoryAuthority -> BankingSystem
+
+    // Data persistence
+    flow CustomerLookup: BankingSystem -> CustomerDB
+    flow CustomerUpdate: BankingSystem -> CustomerDB
+    flow TransactionRecord: BankingSystem -> TransactionLog
+    flow AuditQuery: BankingSystem -> TransactionLog
+}
