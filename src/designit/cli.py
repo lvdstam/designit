@@ -251,7 +251,10 @@ def placeholders(file: Path) -> None:
 
 
 @main.command()
-def lsp() -> None:
+@click.option(
+    "--stdio", is_flag=True, default=True, hidden=True, help="Use stdio transport (default)"
+)
+def lsp(stdio: bool) -> None:
     """Start the Language Server Protocol server.
 
     This is typically called by editors, not directly by users.

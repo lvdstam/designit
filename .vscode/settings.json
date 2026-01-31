@@ -1,0 +1,4 @@
+{
+    "designit.server.path": "/home/lstam/PythonProjects/designit/.venv/bin/designit",
+    "designit.trace.server": "verbose"
+}
