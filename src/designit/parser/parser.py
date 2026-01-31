@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from lark import Lark, Transformer, v_args, Token, Tree
 from lark.exceptions import UnexpectedInput
@@ -32,12 +32,15 @@ from designit.parser.ast_nodes import (
     ProcessNode,
     PropertyNode,
     RelationshipNode,
+    SCDFlowNode,
+    SCDNode,
     SourceLocation,
     StateNode,
     STDNode,
     StructDefNode,
     StructFieldNode,
     StructureNode,
+    SystemNode,
     TransitionNode,
     TypeRefNode,
     UnionDefNode,
@@ -129,6 +132,15 @@ class DesignItTransformer(Transformer[Token, Any]):
         return str(token)
 
     def STD(self, token: Token) -> str:
+        return str(token)
+
+    def SCD(self, token: Token) -> str:
+        return str(token)
+
+    def SYSTEM(self, token: Token) -> str:
+        return str(token)
+
+    def BIDI_ARROW(self, token: Token) -> str:
         return str(token)
 
     def DATADICT(self, token: Token) -> str:
@@ -369,6 +381,95 @@ class DesignItTransformer(Transformer[Token, Any]):
             name=name,
             externals=externals,
             processes=processes,
+            datastores=datastores,
+            flows=flows,
+        )
+
+    # ============================================
+    # SCD Elements
+    # ============================================
+
+    def system_decl(self, items: list[Any]) -> SystemNode:
+        # items: [SYSTEM, IDENTIFIER, block] - skip the keyword
+        name = items[1]
+        body = items[2] if len(items) > 2 else BlockNode()
+        return SystemNode(name=name, body=body)
+
+    def scd_external_decl(self, items: list[Any]) -> ExternalNode:
+        # Reuse ExternalNode from DFD
+        # items: [EXTERNAL, IDENTIFIER, block] - skip the keyword
+        name = items[1]
+        body = items[2] if len(items) > 2 else BlockNode()
+        return ExternalNode(name=name, body=body)
+
+    def scd_datastore_decl(self, items: list[Any]) -> DatastoreNode:
+        # Reuse DatastoreNode from DFD
+        # items: [DATASTORE, IDENTIFIER, block] - skip the keyword
+        name = items[1]
+        body = items[2] if len(items) > 2 else BlockNode()
+        return DatastoreNode(name=name, body=body)
+
+    def scd_flow_endpoint(self, items: list[Any]) -> str:
+        return items[0] if items else ""
+
+    def outbound_arrow(self, items: list[Any]) -> str:
+        return "outbound"
+
+    def bidi_arrow(self, items: list[Any]) -> str:
+        return "bidirectional"
+
+    def scd_flow_arrow(self, items: list[Any]) -> str:
+        return items[0] if items else "outbound"
+
+    def scd_flow_decl(self, items: list[Any]) -> SCDFlowNode:
+        # items: [FLOW, IDENTIFIER, source, arrow_direction, target, properties?]
+        name = items[1]
+        source = items[2]
+        arrow = items[3]  # "outbound" or "bidirectional"
+        target = items[4]
+        properties = items[5] if len(items) > 5 else []
+
+        # Determine direction based on arrow type
+        # For "A -> B": direction is "outbound" (from source to target)
+        # For "A <-> B": direction is "bidirectional"
+        # Actual inbound/outbound relative to system is determined during semantic analysis
+        direction: Literal["inbound", "outbound", "bidirectional"] = (
+            "bidirectional" if arrow == "bidirectional" else "outbound"
+        )
+
+        return SCDFlowNode(
+            name=name,
+            source=source,
+            target=target,
+            direction=direction,
+            properties=properties,
+        )
+
+    def scd_body(self, items: list[Any]) -> Any:
+        return items[0] if items else None
+
+    def scd_decl(self, items: list[Any]) -> SCDNode:
+        # items: [SCD, IDENTIFIER, ...elements] - skip the keyword
+        name = items[1]
+        system = None
+        externals: list[ExternalNode] = []
+        datastores: list[DatastoreNode] = []
+        flows: list[SCDFlowNode] = []
+
+        for item in items[2:]:
+            if isinstance(item, SystemNode):
+                system = item
+            elif isinstance(item, ExternalNode):
+                externals.append(item)
+            elif isinstance(item, DatastoreNode):
+                datastores.append(item)
+            elif isinstance(item, SCDFlowNode):
+                flows.append(item)
+
+        return SCDNode(
+            name=name,
+            system=system,
+            externals=externals,
             datastores=datastores,
             flows=flows,
         )
@@ -689,6 +790,7 @@ class DesignItTransformer(Transformer[Token, Any]):
 
     def start(self, items: list[Any]) -> DocumentNode:
         imports = []
+        scds = []
         dfds = []
         erds = []
         stds = []
@@ -698,6 +800,8 @@ class DesignItTransformer(Transformer[Token, Any]):
         for item in items:
             if isinstance(item, ImportNode):
                 imports.append(item)
+            elif isinstance(item, SCDNode):
+                scds.append(item)
             elif isinstance(item, DFDNode):
                 dfds.append(item)
             elif isinstance(item, ERDNode):
@@ -711,6 +815,7 @@ class DesignItTransformer(Transformer[Token, Any]):
 
         return DocumentNode(
             imports=imports,
+            scds=scds,
             dfds=dfds,
             erds=erds,
             stds=stds,

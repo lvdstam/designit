@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 class DiagramType(str, Enum):
     """Types of diagrams supported."""
 
+    SCD = "scd"
     DFD = "dfd"
     ERD = "erd"
     STD = "std"
@@ -66,6 +67,7 @@ class DesignDocument(BaseModel):
 
     name: str
     files: list[str] = Field(default_factory=list)
+    scds: dict[str, "SCDModel"] = Field(default_factory=dict)
     dfds: dict[str, "DFDModel"] = Field(default_factory=dict)
     erds: dict[str, "ERDModel"] = Field(default_factory=dict)
     stds: dict[str, "STDModel"] = Field(default_factory=dict)
@@ -76,14 +78,22 @@ class DesignDocument(BaseModel):
     @property
     def is_valid(self) -> bool:
         """Check if the document has no errors."""
-        return not any(
-            msg.severity == ValidationSeverity.ERROR for msg in self.validation_messages
-        )
+        return not any(msg.severity == ValidationSeverity.ERROR for msg in self.validation_messages)
 
     @property
     def placeholders(self) -> list[tuple[str, str, str | None]]:
         """Get all placeholder elements as (type, name, file) tuples."""
         result: list[tuple[str, str, str | None]] = []
+
+        for scd in self.scds.values():
+            if scd.system and scd.system.is_placeholder:
+                result.append(("system", scd.system.name, scd.system.source_file))
+            for ext in scd.externals.values():
+                if ext.is_placeholder:
+                    result.append(("external", ext.name, ext.source_file))
+            for ds in scd.datastores.values():
+                if ds.is_placeholder:
+                    result.append(("datastore", ds.name, ds.source_file))
 
         for dfd in self.dfds.values():
             for ext in dfd.externals.values():
@@ -120,6 +130,7 @@ class DesignDocument(BaseModel):
 
 
 # Forward references for type hints
+from designit.model.scd import SCDModel  # noqa: E402
 from designit.model.dfd import DFDModel  # noqa: E402
 from designit.model.erd import ERDModel  # noqa: E402
 from designit.model.std import STDModel  # noqa: E402

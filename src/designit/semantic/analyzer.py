@@ -24,11 +24,14 @@ from designit.parser.ast_nodes import (
     ProcessNode,
     PropertyNode,
     RelationshipNode,
+    SCDFlowNode,
+    SCDNode,
     StateNode,
     STDNode,
     StructDefNode,
     StructFieldNode,
     StructureNode,
+    SystemNode,
     TransitionNode,
     ArrayDefNode,
     UnionDefNode,
@@ -77,6 +80,13 @@ from designit.model.datadict import (
     TypeReference,
     UnionType,
 )
+from designit.model.scd import (
+    SCDDatastore,
+    SCDExternalEntity,
+    SCDFlow,
+    SCDModel,
+    System,
+)
 from designit.semantic.resolver import resolve_imports
 
 
@@ -122,10 +132,14 @@ class SemanticAnalyzer:
             )
         )
 
-    def _error(self, message: str, element_name: str | None = None, line: int | None = None) -> None:
+    def _error(
+        self, message: str, element_name: str | None = None, line: int | None = None
+    ) -> None:
         self._add_message(ValidationSeverity.ERROR, message, element_name, line)
 
-    def _warning(self, message: str, element_name: str | None = None, line: int | None = None) -> None:
+    def _warning(
+        self, message: str, element_name: str | None = None, line: int | None = None
+    ) -> None:
         self._add_message(ValidationSeverity.WARNING, message, element_name, line)
 
     def _info(self, message: str, element_name: str | None = None, line: int | None = None) -> None:
@@ -260,7 +274,9 @@ class SemanticAnalyzer:
         """Analyze a cardinality node."""
         return Cardinality(source=node.source, target=node.target)
 
-    def _analyze_relationship(self, node: RelationshipNode, source_file: str | None) -> Relationship:
+    def _analyze_relationship(
+        self, node: RelationshipNode, source_file: str | None
+    ) -> Relationship:
         """Analyze a relationship node."""
         return Relationship(
             name=node.name,
@@ -291,7 +307,9 @@ class SemanticAnalyzer:
     # STD Analysis
     # ============================================
 
-    def _analyze_state(self, node: StateNode, source_file: str | None, is_initial: bool = False) -> State:
+    def _analyze_state(
+        self, node: StateNode, source_file: str | None, is_initial: bool = False
+    ) -> State:
         """Analyze a state node."""
         props = self._extract_properties(node.body)
         return State(
@@ -401,7 +419,9 @@ class SemanticAnalyzer:
             constraints=constraints,
         )
 
-    def _analyze_data_definition(self, node: DataDefNode, source_file: str | None) -> DataDefinition:
+    def _analyze_data_definition(
+        self, node: DataDefNode, source_file: str | None
+    ) -> DataDefinition:
         """Analyze a data definition node."""
         defn = node.definition
 
@@ -467,6 +487,85 @@ class SemanticAnalyzer:
         return model
 
     # ============================================
+    # SCD Analysis
+    # ============================================
+
+    def _analyze_system(self, node: SystemNode, source_file: str | None) -> System:
+        """Analyze a system node."""
+        props = self._extract_properties(node.body)
+        return System(
+            name=node.name,
+            description=props.get("description"),
+            is_placeholder=self._is_placeholder(node.body),
+            source_file=source_file,
+            line=node.location.line if node.location else None,
+        )
+
+    def _analyze_scd(self, node: SCDNode, source_file: str | None) -> SCDModel:
+        """Analyze an SCD AST node."""
+        model = SCDModel(name=node.name, source_file=source_file)
+
+        # Process system (should be exactly one)
+        if node.system:
+            model.system = self._analyze_system(node.system, source_file)
+
+        # Process externals
+        for ext in node.externals:
+            props = self._extract_properties(ext.body)
+            external = SCDExternalEntity(
+                name=ext.name,
+                description=props.get("description"),
+                is_placeholder=self._is_placeholder(ext.body),
+                source_file=source_file,
+                line=ext.location.line if ext.location else None,
+            )
+            if ext.name in model.externals:
+                self._warning(f"Duplicate external entity: {ext.name}", ext.name)
+            model.externals[ext.name] = external
+
+        # Process datastores
+        for ds in node.datastores:
+            props = self._extract_properties(ds.body)
+            datastore = SCDDatastore(
+                name=ds.name,
+                description=props.get("description"),
+                is_placeholder=self._is_placeholder(ds.body),
+                source_file=source_file,
+                line=ds.location.line if ds.location else None,
+            )
+            if ds.name in model.datastores:
+                self._warning(f"Duplicate datastore: {ds.name}", ds.name)
+            model.datastores[ds.name] = datastore
+
+        # Process flows
+        for flow in node.flows:
+            # Determine direction based on arrow type and endpoint order
+            # flow.source is the left endpoint, flow.target is the right endpoint
+            # flow.direction is "outbound" for ->, "bidirectional" for <->
+            if flow.direction == "bidirectional":
+                direction = "bidirectional"
+            else:
+                # For outbound arrow (->), source is left endpoint, target is right
+                direction = "outbound"
+                # If the system is the target, it's inbound to the system
+                if model.system and flow.target == model.system.name:
+                    direction = "inbound"
+
+            scd_flow = SCDFlow(
+                name=flow.name,
+                source=ElementReference(name=flow.source),
+                target=ElementReference(name=flow.target),
+                direction=direction,
+                source_file=source_file,
+                line=flow.location.line if flow.location else None,
+            )
+            if flow.name in model.flows:
+                self._warning(f"Duplicate flow: {flow.name}", flow.name)
+            model.flows[flow.name] = scd_flow
+
+        return model
+
+    # ============================================
     # Document Analysis
     # ============================================
 
@@ -516,6 +615,13 @@ class SemanticAnalyzer:
                 self._warning(f"Duplicate structure chart: {structure.name}", structure.name)
             design.structures[structure.name] = model
 
+        # Analyze SCDs
+        for scd in doc.scds:
+            model = self._analyze_scd(scd, source_file)
+            if scd.name in design.scds:
+                self._warning(f"Duplicate SCD: {scd.name}", scd.name)
+            design.scds[scd.name] = model
+
         # Analyze Data Dictionaries (merge into one)
         if doc.datadicts:
             merged_datadict = DataDictionaryModel()
@@ -549,6 +655,7 @@ def analyze_file(filepath: str | Path, resolve_all_imports: bool = True) -> Desi
         design.files = files
     else:
         from designit.parser.parser import parse_file
+
         doc = parse_file(filepath)
         design = analyzer.analyze(doc, str(filepath))
 

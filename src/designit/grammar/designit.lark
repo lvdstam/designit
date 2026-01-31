@@ -6,6 +6,7 @@ start: _NL* (declaration _NL*)*
 
 // Top-level declarations
 declaration: import_decl
+           | scd_decl
            | dfd_decl
            | erd_decl
            | std_decl
@@ -14,6 +15,29 @@ declaration: import_decl
 
 // Import statement
 import_decl: IMPORT STRING
+
+// ============================================
+// System Context Diagram (SCD)
+// ============================================
+scd_decl: SCD IDENTIFIER "{" _NL* scd_body* "}"
+
+scd_body: system_decl _NL*
+        | scd_external_decl _NL*
+        | scd_datastore_decl _NL*
+        | scd_flow_decl _NL*
+
+system_decl: SYSTEM IDENTIFIER block
+
+scd_external_decl: EXTERNAL IDENTIFIER block
+
+scd_datastore_decl: DATASTORE IDENTIFIER block
+
+scd_flow_decl: FLOW IDENTIFIER ":" scd_flow_endpoint scd_flow_arrow scd_flow_endpoint properties?
+
+scd_flow_endpoint: IDENTIFIER
+
+scd_flow_arrow: ARROW           -> outbound_arrow
+              | BIDI_ARROW      -> bidi_arrow
 
 // ============================================
 // Data Flow Diagram (DFD)
@@ -190,13 +214,15 @@ placeholder: "..." | "TBD"
 identifier: IDENTIFIER
           | STATE | PROCESS | EXTERNAL | DATASTORE | FLOW
           | ENTITY | RELATIONSHIP | TRANSITION | MODULE | STRUCTURE
-          | DFD | ERD | STD | DATADICT | IMPORT | INITIAL
+          | DFD | ERD | STD | SCD | DATADICT | IMPORT | INITIAL | SYSTEM
           | CALLS | DATA_COUPLE | CONTROL_COUPLE
           | PK | FK | UNIQUE | NOT | NULL | PATTERN | OPTIONAL | MIN | MAX
           | STRING_TYPE | INTEGER_TYPE | DECIMAL_TYPE | BOOLEAN_TYPE
           | DATETIME_TYPE | DATE_TYPE | TIME_TYPE | BINARY_TYPE
 
 // Explicit keyword terminals (match before IDENTIFIER)
+SCD: "scd"
+SYSTEM: "system"
 STATE: "state"
 PROCESS: "process"
 EXTERNAL: "external"
@@ -238,8 +264,10 @@ BINARY_TYPE: "binary"
 // Terminals
 // ============================================
 // High-priority terminals (order matters for basic lexer)
+// BIDI_ARROW must have higher priority than ARROW to match "<->" before "->"
 // ARROW must have higher priority than MINUS to match "->" before "-"
 // CARDINALITY_FULL must have higher priority than NUMBER to match "1:n" before "1"
+BIDI_ARROW.4: "<->"
 ARROW.3: "->"
 CARDINALITY_FULL.3: /[01n](\.\.[01n])?:[01n](\.\.[01n])?/
 MINUS.2: "-"

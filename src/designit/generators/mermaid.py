@@ -10,6 +10,7 @@ from designit.model.dfd import DFDModel
 from designit.model.erd import ERDModel
 from designit.model.std import STDModel
 from designit.model.structure import StructureModel
+from designit.model.scd import SCDModel
 
 
 class MermaidGenerator:
@@ -155,7 +156,7 @@ class MermaidGenerator:
                     out.write(f"        {type_name} {attr_name}\n")
 
             if entity.is_placeholder:
-                out.write("        string _placeholder_ \"TBD\"\n")
+                out.write('        string _placeholder_ "TBD"\n')
 
             out.write("    }\n")
 
@@ -170,7 +171,9 @@ class MermaidGenerator:
             left_card = self._cardinality_to_mermaid(rel.cardinality.source, "left")
             right_card = self._cardinality_to_mermaid(rel.cardinality.target, "right")
 
-            out.write(f'    {source_id} {left_card}--{right_card} {target_id} : "{self._escape(name)}"\n')
+            out.write(
+                f'    {source_id} {left_card}--{right_card} {target_id} : "{self._escape(name)}"\n'
+            )
 
     def _cardinality_to_mermaid(self, card: str, side: str) -> str:
         """Convert cardinality spec to Mermaid ERD notation."""
@@ -322,6 +325,95 @@ class MermaidGenerator:
                     out.write(f"    style {pid} stroke-dasharray: 5 5\n")
 
     # ============================================
+    # SCD Generation (using flowchart)
+    # ============================================
+
+    def generate_scd(self, scd: SCDModel) -> str:
+        """Generate Mermaid output for an SCD.
+
+        Args:
+            scd: The SCD model to generate.
+
+        Returns:
+            Mermaid format string.
+        """
+        output = io.StringIO()
+        self._write_scd(scd, output)
+        return output.getvalue()
+
+    def _write_scd(self, scd: SCDModel, out: TextIO) -> None:
+        """Write SCD to Mermaid format."""
+        out.write(f"---\ntitle: {scd.name}\n---\n")
+        out.write("flowchart TB\n")
+
+        # System (double-bordered box via subgraph or special styling)
+        if scd.system:
+            sys = scd.system
+            if not self.include_placeholders and sys.is_placeholder:
+                pass
+            else:
+                safe_id = self._safe_id(sys.name)
+                label = self._escape(sys.name)
+                if sys.description:
+                    label += f"<br/><i>{self._escape(sys.description)}</i>"
+                # Use double brackets for stadium shape to distinguish system
+                out.write(f'    {safe_id}[["{label}"]]\n')
+
+        # External entities (rectangles)
+        for name, ext in scd.externals.items():
+            if not self.include_placeholders and ext.is_placeholder:
+                continue
+            safe_id = self._safe_id(name)
+            label = self._escape(name)
+            if ext.description:
+                label += f"<br/><i>{self._escape(ext.description)}</i>"
+            out.write(f'    {safe_id}["{label}"]\n')
+
+        # Data stores (cylinders)
+        for name, ds in scd.datastores.items():
+            if not self.include_placeholders and ds.is_placeholder:
+                continue
+            safe_id = self._safe_id(name)
+            label = self._escape(name)
+            if ds.description:
+                label += f"<br/>{self._escape(ds.description)}"
+            out.write(f'    {safe_id}[("{label}")]\n')
+
+        # Data flows (edges with direction)
+        out.write("\n")
+        for name, flow in scd.flows.items():
+            source_id = self._safe_id(flow.source.name)
+            target_id = self._safe_id(flow.target.name)
+            label = self._escape(name)
+
+            if flow.direction == "bidirectional":
+                # Bidirectional arrow
+                out.write(f'    {source_id} <-->|"{label}"| {target_id}\n')
+            else:
+                # Unidirectional arrow (source -> target)
+                out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+
+        # Style placeholders and system
+        placeholder_ids = []
+        if scd.system and scd.system.is_placeholder:
+            placeholder_ids.append(self._safe_id(scd.system.name))
+        for name, ext in scd.externals.items():
+            if ext.is_placeholder:
+                placeholder_ids.append(self._safe_id(name))
+        for name, ds in scd.datastores.items():
+            if ds.is_placeholder:
+                placeholder_ids.append(self._safe_id(name))
+
+        if self.include_placeholders and placeholder_ids:
+            out.write("\n")
+            for pid in placeholder_ids:
+                out.write(f"    style {pid} stroke-dasharray: 5 5\n")
+
+        # Style system with thicker border
+        if scd.system:
+            out.write(f"\n    style {self._safe_id(scd.system.name)} stroke-width:3px\n")
+
+    # ============================================
     # Full Document Generation
     # ============================================
 
@@ -347,6 +439,9 @@ class MermaidGenerator:
 
         for name, structure in doc.structures.items():
             result[f"structure_{name}"] = self.generate_structure(structure)
+
+        for name, scd in doc.scds.items():
+            result[f"scd_{name}"] = self.generate_scd(scd)
 
         return result
 

@@ -9,6 +9,7 @@ from designit.parser.ast_nodes import (
     STDNode,
     StructureNode,
     DataDictNode,
+    SCDNode,
 )
 
 
@@ -202,6 +203,87 @@ class TestDataDictParsing:
         assert len(doc.datadicts) == 1
         datadict = doc.datadicts[0]
         assert len(datadict.definitions) == 5
+
+
+class TestSCDParsing:
+    """Tests for System Context Diagram parsing."""
+
+    def test_simple_scd(self) -> None:
+        """Parse a simple SCD."""
+        source = """
+        scd OrderProcessing {
+            system OrderSystem {
+                description: "Processes customer orders"
+            }
+            external Customer {
+                description: "Places orders"
+            }
+            external PaymentGateway {
+                description: "Handles payments"
+            }
+            flow OrderRequest: Customer -> OrderSystem
+            flow Confirmation: OrderSystem -> Customer
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.scds) == 1
+        scd = doc.scds[0]
+        assert scd.name == "OrderProcessing"
+        assert scd.system is not None
+        assert scd.system.name == "OrderSystem"
+        assert len(scd.externals) == 2
+        assert len(scd.flows) == 2
+
+    def test_scd_with_datastore(self) -> None:
+        """Parse SCD with data stores."""
+        source = """
+        scd DataSystem {
+            system MainSystem {}
+            datastore Database {
+                description: "Primary database"
+            }
+            flow Query: MainSystem -> Database
+            flow Results: Database -> MainSystem
+        }
+        """
+        doc = parse_string(source)
+        scd = doc.scds[0]
+        assert len(scd.datastores) == 1
+        assert "Database" in [ds.name for ds in scd.datastores]
+
+    def test_scd_bidirectional_flow(self) -> None:
+        """Parse SCD with bidirectional flows."""
+        source = """
+        scd BidiSystem {
+            system Core {}
+            external Partner {}
+            flow DataExchange: Core <-> Partner
+        }
+        """
+        doc = parse_string(source)
+        scd = doc.scds[0]
+        assert len(scd.flows) == 1
+        flow = scd.flows[0]
+        assert flow.direction == "bidirectional"
+        assert flow.source == "Core"
+        assert flow.target == "Partner"
+
+    def test_scd_with_placeholder(self) -> None:
+        """Parse SCD with placeholder elements."""
+        source = """
+        scd IncompleteSystem {
+            system Core {
+                ...
+            }
+            external ToBeDefinedEntity {
+                TBD
+            }
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.scds) == 1
+        scd = doc.scds[0]
+        assert scd.system is not None
 
 
 class TestParseErrors:

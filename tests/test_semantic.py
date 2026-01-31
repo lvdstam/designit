@@ -145,3 +145,147 @@ class TestValidation:
         messages = validate(doc)
         warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
         assert any("primary key" in m.message.lower() for m in warnings)
+
+
+class TestSCDAnalysis:
+    """Tests for SCD semantic analysis."""
+
+    def test_analyze_scd(self) -> None:
+        """Test SCD analysis creates proper model."""
+        source = """
+        scd TestSCD {
+            system MainSystem { description: "Main system" }
+            external User { description: "User" }
+            datastore DB { description: "Database" }
+            flow Request: User -> MainSystem
+            flow Data: MainSystem -> DB
+        }
+        """
+        doc = analyze_string(source)
+        assert "TestSCD" in doc.scds
+        scd = doc.scds["TestSCD"]
+        assert scd.system is not None
+        assert scd.system.name == "MainSystem"
+        assert "User" in scd.externals
+        assert "DB" in scd.datastores
+        assert "Request" in scd.flows
+        assert "Data" in scd.flows
+
+    def test_scd_flow_direction_inbound(self) -> None:
+        """Test that flows to system are marked as inbound."""
+        source = """
+        scd FlowTest {
+            system Core {}
+            external Client {}
+            flow Input: Client -> Core
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["FlowTest"]
+        flow = scd.flows["Input"]
+        assert flow.direction == "inbound"
+
+    def test_scd_flow_direction_outbound(self) -> None:
+        """Test that flows from system are marked as outbound."""
+        source = """
+        scd FlowTest {
+            system Core {}
+            external Client {}
+            flow Output: Core -> Client
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["FlowTest"]
+        flow = scd.flows["Output"]
+        assert flow.direction == "outbound"
+
+    def test_scd_flow_direction_bidirectional(self) -> None:
+        """Test that bidirectional flows are marked correctly."""
+        source = """
+        scd FlowTest {
+            system Core {}
+            external Partner {}
+            flow Exchange: Core <-> Partner
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["FlowTest"]
+        flow = scd.flows["Exchange"]
+        assert flow.direction == "bidirectional"
+
+
+class TestSCDValidation:
+    """Tests for SCD validation."""
+
+    def test_valid_scd(self) -> None:
+        """Test validation of a valid SCD."""
+        source = """
+        scd Valid {
+            system MainSystem {}
+            external User {}
+            flow Request: User -> MainSystem
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) == 0
+
+    def test_missing_system_error(self) -> None:
+        """Test validation catches missing system declaration."""
+        source = """
+        scd NoSystem {
+            external User {}
+            external Other {}
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) > 0
+        assert any("system" in m.message.lower() for m in errors)
+
+    def test_missing_flow_endpoint_error(self) -> None:
+        """Test validation catches unknown flow endpoints."""
+        source = """
+        scd Invalid {
+            system MainSystem {}
+            external User {}
+            flow Request: User -> NonExistent
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) > 0
+        assert any("NonExistent" in m.message for m in errors)
+
+    def test_orphan_element_warning(self) -> None:
+        """Test validation warns about elements without flows."""
+        source = """
+        scd Orphan {
+            system MainSystem {}
+            external User {}
+            external Unused {}
+            flow Request: User -> MainSystem
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        assert any("Unused" in m.message for m in warnings)
+
+    def test_flow_not_involving_system_warning(self) -> None:
+        """Test validation warns about flows not involving the system."""
+        source = """
+        scd BadFlow {
+            system Core {}
+            external A {}
+            external B {}
+            flow Direct: A -> B
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        assert any("not involve" in m.message.lower() or "Core" in m.message for m in warnings)

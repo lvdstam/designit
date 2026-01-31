@@ -175,6 +175,7 @@ cd vscode-extension && npm install && npm run package
 
 The DSL supports five diagram types:
 
+1. **SCD** (System Context Diagram) - System, External entities, datastores, flows
 1. **DFD** (Data Flow Diagram) - External entities, processes, datastores, flows
 2. **ERD** (Entity-Relationship Diagram) - Entities with attributes, relationships with cardinality
 3. **STD** (State Transition Diagram) - States, transitions with triggers/guards/actions

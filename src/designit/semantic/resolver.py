@@ -199,13 +199,16 @@ class ImportResolver:
                 merged.erds.extend(doc.erds)
                 merged.stds.extend(doc.stds)
                 merged.structures.extend(doc.structures)
+                merged.scds.extend(doc.scds)
                 merged.datadicts.extend(doc.datadicts)
                 # Don't merge imports - they're already resolved
 
         return merged
 
 
-def resolve_imports(filepath: str | Path, base_path: Path | str | None = None) -> tuple[DocumentNode, list[str]]:
+def resolve_imports(
+    filepath: str | Path, base_path: Path | str | None = None
+) -> tuple[DocumentNode, list[str]]:
     """Convenience function to resolve imports from a file.
 
     Args:

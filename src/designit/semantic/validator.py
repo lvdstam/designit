@@ -35,17 +35,29 @@ class Validator:
         )
 
     def _error(
-        self, message: str, element_name: str | None = None, file: str | None = None, line: int | None = None
+        self,
+        message: str,
+        element_name: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
     ) -> None:
         self._add_message(ValidationSeverity.ERROR, message, element_name, file, line)
 
     def _warning(
-        self, message: str, element_name: str | None = None, file: str | None = None, line: int | None = None
+        self,
+        message: str,
+        element_name: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
     ) -> None:
         self._add_message(ValidationSeverity.WARNING, message, element_name, file, line)
 
     def _info(
-        self, message: str, element_name: str | None = None, file: str | None = None, line: int | None = None
+        self,
+        message: str,
+        element_name: str | None = None,
+        file: str | None = None,
+        line: int | None = None,
     ) -> None:
         self._add_message(ValidationSeverity.INFO, message, element_name, file, line)
 
@@ -64,6 +76,7 @@ class Validator:
         self._validate_erds(doc)
         self._validate_stds(doc)
         self._validate_structures(doc)
+        self._validate_scds(doc)
         self._validate_datadict(doc)
         self._validate_cross_references(doc)
         self._report_placeholders(doc)
@@ -74,7 +87,9 @@ class Validator:
         """Validate all DFDs."""
         for dfd_name, dfd in doc.dfds.items():
             # Check that flows reference valid elements
-            all_elements = set(dfd.externals.keys()) | set(dfd.processes.keys()) | set(dfd.datastores.keys())
+            all_elements = (
+                set(dfd.externals.keys()) | set(dfd.processes.keys()) | set(dfd.datastores.keys())
+            )
 
             for flow_name, flow in dfd.flows.items():
                 if flow.source.name not in all_elements:
@@ -131,7 +146,10 @@ class Validator:
             for entity_name, entity in erd.entities.items():
                 for attr_name, attr in entity.attributes.items():
                     for constraint in attr.constraints:
-                        if constraint.target_entity and constraint.target_entity not in erd.entities:
+                        if (
+                            constraint.target_entity
+                            and constraint.target_entity not in erd.entities
+                        ):
                             self._error(
                                 f"FK in '{entity_name}.{attr_name}' references unknown entity '{constraint.target_entity}'",
                                 f"{entity_name}.{attr_name}",
@@ -212,13 +230,83 @@ class Validator:
                     cycle[0],
                 )
 
+    def _validate_scds(self, doc: DesignDocument) -> None:
+        """Validate all SCDs."""
+        for scd_name, scd in doc.scds.items():
+            # Check that exactly one system is defined
+            if not scd.system:
+                self._error(
+                    f"SCD '{scd_name}' must have exactly one system declaration",
+                    scd_name,
+                    scd.source_file,
+                )
+
+            # Collect all valid element names
+            all_elements: set[str] = set()
+            if scd.system:
+                all_elements.add(scd.system.name)
+            all_elements.update(scd.externals.keys())
+            all_elements.update(scd.datastores.keys())
+
+            # Check that flows reference valid elements
+            for flow_name, flow in scd.flows.items():
+                if flow.source.name not in all_elements:
+                    self._error(
+                        f"Flow '{flow_name}' references unknown source '{flow.source.name}'",
+                        flow_name,
+                        flow.source_file,
+                        flow.line,
+                    )
+                if flow.target.name not in all_elements:
+                    self._error(
+                        f"Flow '{flow_name}' references unknown target '{flow.target.name}'",
+                        flow_name,
+                        flow.source_file,
+                        flow.line,
+                    )
+
+                # Check that flows involve the system
+                if scd.system:
+                    system_name = scd.system.name
+                    if flow.source.name != system_name and flow.target.name != system_name:
+                        self._warning(
+                            f"Flow '{flow_name}' does not involve the system '{system_name}'",
+                            flow_name,
+                            flow.source_file,
+                            flow.line,
+                        )
+
+            # Check for orphan elements (no flows in or out)
+            elements_with_flows: set[str] = set()
+            for flow in scd.flows.values():
+                elements_with_flows.add(flow.source.name)
+                elements_with_flows.add(flow.target.name)
+
+            for element in scd.all_elements():
+                if element.name not in elements_with_flows and not element.is_placeholder:
+                    self._warning(
+                        f"Element '{element.name}' has no data flows",
+                        element.name,
+                        element.source_file,
+                        element.line,
+                    )
+
     def _validate_datadict(self, doc: DesignDocument) -> None:
         """Validate the data dictionary."""
         if not doc.data_dictionary:
             return
 
         dd = doc.data_dictionary
-        builtin_types = {"string", "integer", "decimal", "boolean", "datetime", "date", "time", "binary"}
+        builtin_types = {
+            "string",
+            "integer",
+            "decimal",
+            "boolean",
+            "datetime",
+            "date",
+            "time",
+            "binary",
+        }
 
         for def_name, defn in dd.definitions.items():
             if defn.is_placeholder:

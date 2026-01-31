@@ -123,6 +123,38 @@ class DFDNode(ASTNode):
 
 
 # ============================================
+# System Context Diagram (SCD)
+# ============================================
+
+
+class SystemNode(ASTNode):
+    """The system in an SCD."""
+
+    name: str
+    body: BlockNode | PlaceholderNode
+
+
+class SCDFlowNode(ASTNode):
+    """A data flow in an SCD with direction."""
+
+    name: str
+    source: str
+    target: str
+    direction: Literal["inbound", "outbound", "bidirectional"]
+    properties: list[PropertyNode] = Field(default_factory=list)
+
+
+class SCDNode(ASTNode):
+    """A System Context Diagram declaration."""
+
+    name: str
+    system: SystemNode | None = None
+    externals: list[ExternalNode] = Field(default_factory=list)
+    datastores: list[DatastoreNode] = Field(default_factory=list)
+    flows: list[SCDFlowNode] = Field(default_factory=list)
+
+
+# ============================================
 # Entity-Relationship Diagram (ERD)
 # ============================================
 
@@ -298,6 +330,7 @@ class DocumentNode(ASTNode):
     """The root node representing an entire document."""
 
     imports: list[ImportNode] = Field(default_factory=list)
+    scds: list[SCDNode] = Field(default_factory=list)
     dfds: list[DFDNode] = Field(default_factory=list)
     erds: list[ERDNode] = Field(default_factory=list)
     stds: list[STDNode] = Field(default_factory=list)

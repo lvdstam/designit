@@ -54,6 +54,43 @@ The DSL shall support importing other `.dit` files to enable multi-file projects
 
 ### 1.2 Diagram Types
 
+#### REQ-GRAM-005: System Context Diagrams (SCD) [TODO]
+The DSL shall support System Context Diagram definitions using the `scd` keyword. The SCD is the top-level diagram in Structured Analysis that depicts the system in its context.
+
+**Acceptance Criteria:**
+- SCD declared with `scd Name { ... }`
+- Support for system declaration: `system Name { ... }` (required, exactly one per SCD)
+- Support for external entities: `external Name { ... }`
+- Support for data stores: `datastore Name { ... }`
+- Support for directional data flows with arrow notation:
+  - Inbound: `flow Name: External -> System`
+  - Outbound: `flow Name: System -> External`
+  - Bidirectional: `flow Name: External <-> System`
+- Elements support property blocks with key-value pairs
+
+**Example:**
+```
+scd OrderProcessing {
+    system OrderSystem { description: "Processes customer orders" }
+    
+    external Customer { description: "Places orders" }
+    external PaymentGateway { description: "Handles payments" }
+    datastore OrderDB { description: "Order storage" }
+    
+    flow OrderRequest: Customer -> OrderSystem
+    flow Confirmation: OrderSystem -> Customer
+    flow PaymentData: OrderSystem <-> PaymentGateway
+    flow OrderData: OrderSystem -> OrderDB
+}
+```
+
+**Implementation:**
+- Grammar: `src/designit/grammar/designit.lark` (scd_decl, system_decl, scd_flow_decl)
+- AST: `src/designit/parser/ast_nodes.py` (SCDNode, SystemNode, SCDFlowNode)
+- Model: `src/designit/model/scd.py`
+
+---
+
 #### REQ-GRAM-010: Data Flow Diagrams (DFD) [DONE]
 The DSL shall support Data Flow Diagram definitions using the `dfd` keyword.
 
@@ -342,6 +379,40 @@ The system shall transform the parsed AST into a rich semantic model.
 
 ### 2.2 Validation Rules
 
+#### REQ-SEM-005: SCD System Validation [TODO]
+Each SCD shall have exactly one system declaration.
+
+**Acceptance Criteria:**
+- ERROR if no system is declared in SCD
+- ERROR if more than one system is declared in SCD
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_scds()`
+
+---
+
+#### REQ-SEM-006: SCD Flow Endpoint Validation [TODO]
+SCD flow endpoints shall reference existing elements.
+
+**Acceptance Criteria:**
+- ERROR if flow source references non-existent element
+- ERROR if flow target references non-existent element
+- Valid endpoints: system, externals, datastores
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_scds()`
+
+---
+
+#### REQ-SEM-007: SCD Orphan Element Warning [TODO]
+Elements not connected by any flow shall generate a warning.
+
+**Acceptance Criteria:**
+- WARNING if external has no incoming or outgoing flows
+- WARNING if datastore has no incoming or outgoing flows
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_scds()`
+
+---
+
 #### REQ-SEM-010: DFD Flow Endpoint Validation [DONE]
 Data flow endpoints shall be validated to reference existing elements.
 
@@ -593,6 +664,22 @@ Structure charts shall be generated as Mermaid flowcharts.
 
 ---
 
+#### REQ-GEN-007: Mermaid SCD Generation [TODO]
+SCDs shall be generated as Mermaid flowcharts.
+
+**Acceptance Criteria:**
+- Flowchart direction: TB (top to bottom)
+- System: stadium shape `([label])` with distinct styling (bold border)
+- Externals: rectangle shape `["label"]`
+- Datastores: cylinder shape `[("label")]`
+- Inbound flows: arrows pointing to system
+- Outbound flows: arrows pointing from system
+- Bidirectional flows: `<-->` arrows
+
+**Implementation:** `src/designit/generators/mermaid.py:MermaidGenerator.generate_scd()`
+
+---
+
 #### REQ-GEN-006: Mermaid Placeholder Styling [DONE]
 Placeholder elements shall be visually distinct in generated diagrams.
 
@@ -665,6 +752,20 @@ Structure charts shall be generated as GraphViz directed graphs.
 - Hierarchical layout
 
 **Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator.generate_structure()`
+
+---
+
+#### REQ-GEN-056: GraphViz SCD Generation [TODO]
+SCDs shall be generated as GraphViz directed graphs.
+
+**Acceptance Criteria:**
+- System with bold border: `penwidth=2`
+- Externals as rectangles: `shape=box`
+- Datastores as cylinders: `shape=cylinder`
+- Arrow direction matches flow direction
+- Bidirectional flows: `dir=both`
+
+**Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator.generate_scd()`
 
 ---
 
@@ -1213,6 +1314,7 @@ The extension shall be licensed under MIT license.
 - Empty document parsing
 - Comment-only document
 - Import statement parsing
+- SCD parsing (system, externals, datastores, directional flows)
 - DFD parsing (full and with placeholders)
 - ERD parsing (entities, attributes, constraints, relationships)
 - STD parsing (states, transitions)
@@ -1221,6 +1323,10 @@ The extension shall be licensed under MIT license.
 - Parse error handling (invalid syntax, unclosed blocks)
 
 ### Semantic Tests (`tests/test_semantic.py`)
+- SCD semantic analysis
+- SCD system validation (required, unique)
+- SCD flow endpoint validation
+- SCD orphan element warning
 - DFD semantic analysis
 - ERD semantic analysis with primary key detection
 - Placeholder detection and tracking
@@ -1244,6 +1350,7 @@ The extension shall be licensed under MIT license.
 | `src/designit/semantic/validator.py` | Validation rules |
 | `src/designit/semantic/resolver.py` | Multi-file import resolution |
 | `src/designit/model/base.py` | Base model classes |
+| `src/designit/model/scd.py` | SCD semantic model |
 | `src/designit/model/dfd.py` | DFD semantic model |
 | `src/designit/model/erd.py` | ERD semantic model |
 | `src/designit/model/std.py` | STD semantic model |
