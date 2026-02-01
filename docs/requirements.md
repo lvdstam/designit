@@ -271,7 +271,7 @@ datadict {
 
 ---
 
-#### REQ-GRAM-051: Named Data Dictionary [TODO]
+#### REQ-GRAM-051: Named Data Dictionary [DONE]
 The DSL shall support optional names for datadict blocks that serve as namespaces.
 
 **Acceptance Criteria:**
@@ -307,7 +307,7 @@ datadict PaymentGateway {
 
 ---
 
-#### REQ-GRAM-052: Qualified Type References in Flows [TODO]
+#### REQ-GRAM-052: Qualified Type References in Flows [DONE]
 Flow declarations shall support qualified type references using dot notation.
 
 **Acceptance Criteria:**
@@ -618,17 +618,6 @@ Type references shall reference existing types or built-in types.
 
 ---
 
-#### REQ-SEM-060: Cross-Diagram Reference Info [DONE]
-Flow names not defined in data dictionary shall generate an informational message.
-
-**Acceptance Criteria:**
-- INFO if DFD flow name not found in data dictionary
-- Encourages documenting data types
-
-**Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
-
----
-
 #### REQ-SEM-061: SCD Flow Data Dictionary Validation [DONE]
 SCD flow names shall be validated against the data dictionary.
 
@@ -642,11 +631,11 @@ SCD flow names shall be validated against the data dictionary.
 
 ---
 
-#### REQ-SEM-062: DFD Flow Data Dictionary Validation Severity [DONE]
-DFD flow data dictionary validation shall use ERROR severity.
+#### REQ-SEM-062: DFD Flow Data Dictionary Validation [DONE]
+DFD flow names shall be validated against the data dictionary with ERROR severity.
 
 **Acceptance Criteria:**
-- Upgrade existing DFD flow validation from INFO to ERROR severity
+- ERROR if DFD flow name is not defined in data dictionary
 - Error message format: `Flow '<flow_name>' in DFD '<dfd_name>' is not defined in data dictionary`
 - Error includes source file and line number of the flow definition
 - Consistent with SCD flow validation (REQ-SEM-061)
@@ -655,7 +644,7 @@ DFD flow data dictionary validation shall use ERROR severity.
 
 ---
 
-#### REQ-SEM-063: Namespaced Type Qualification Requirement [TODO]
+#### REQ-SEM-063: Namespaced Type Qualification Requirement [DONE]
 Types defined in named datadicts shall always require qualification when referenced in flows.
 
 **Acceptance Criteria:**
@@ -681,7 +670,7 @@ flow PaymentGateway.Request: System -> Gateway
 
 ---
 
-#### REQ-SEM-064: Cross-Namespace Reference Restriction [TODO]
+#### REQ-SEM-064: Cross-Namespace Reference Restriction [DONE]
 Types in named datadicts shall only reference types from the same namespace or from anonymous datadicts.
 
 **Acceptance Criteria:**
@@ -719,7 +708,7 @@ datadict OrderService {
 
 ---
 
-#### REQ-SEM-065: Datadict Namespace Merging [TODO]
+#### REQ-SEM-065: Datadict Namespace Merging [DONE]
 Multiple datadict blocks with the same name (or multiple anonymous blocks) shall be merged.
 
 **Acceptance Criteria:**

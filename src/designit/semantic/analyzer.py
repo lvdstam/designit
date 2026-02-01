@@ -623,7 +623,12 @@ class SemanticAnalyzer:
             # Use qualified name as key (includes namespace if present)
             qualified_name = data_def.qualified_name
             if qualified_name in model.definitions:
-                self._warning(f"Duplicate data definition: {qualified_name}", defn.name)
+                ns_info = f" in namespace '{namespace}'" if namespace else ""
+                self._error(
+                    f"Duplicate type definition '{data_def.name}'{ns_info}",
+                    defn.name,
+                    defn.location.line if defn.location else None,
+                )
             model.definitions[qualified_name] = data_def
 
         return model
@@ -801,7 +806,12 @@ class SemanticAnalyzer:
                 dd_model = self._analyze_datadict(dd, source_file)
                 for name, defn in dd_model.definitions.items():
                     if name in merged_datadict.definitions:
-                        self._warning(f"Duplicate data definition: {name}", name)
+                        ns_info = f" in namespace '{defn.namespace}'" if defn.namespace else ""
+                        self._error(
+                            f"Duplicate type definition '{defn.name}'{ns_info}",
+                            name,
+                            defn.line,
+                        )
                     merged_datadict.definitions[name] = defn
             design.data_dictionary = merged_datadict
 
