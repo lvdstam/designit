@@ -175,13 +175,19 @@ cd vscode-extension && npm install && npm run package
 
 ### Before Committing
 
+**IMPORTANT: All checks must pass before committing.**
+
+Run all checks with this single command:
+```bash
+uv run pytest tests/ -v && uv run ruff check src/ tests/ && uv run mypy src/ && uv run ruff check src/ --select=C901 --config="lint.mccabe.max-complexity=10"
+```
+
+Or run them individually:
 1. Run tests: `uv run pytest tests/ -v`
 2. Run linting: `uv run ruff check src/ tests/`
 3. Run type checking: `uv run mypy src/`
 4. Check complexity: `uv run ruff check src/ --select=C901 --config="lint.mccabe.max-complexity=10"`
 5. Test CLI commands work correctly
-
-All checks (tests, linting, type checking, complexity) must pass before committing.
 
 ## Diagram Types
 

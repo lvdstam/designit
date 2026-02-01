@@ -1804,6 +1804,37 @@ class TestNamespacedDataDict:
         assert "PaymentGateway.Request1" in dd.definitions
         assert "PaymentGateway.Request2" in dd.definitions
 
+    def test_namespace_merging_duplicate_type_error(self) -> None:
+        """Duplicate type name within same namespace should produce an error (REQ-SEM-065).
+
+        When multiple datadict blocks with the same namespace define a type with
+        the same name, this should be reported as an error.
+        """
+        source = """
+        datadict PaymentGateway {
+            Request = { id: string }
+        }
+
+        datadict PaymentGateway {
+            Request = { other: string }
+        }
+
+        scd Context {
+            system Sys {}
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        # Combine messages from both analyzer and validator
+        all_messages = list(doc.validation_messages) + messages
+        errors = [m for m in all_messages if m.severity == ValidationSeverity.ERROR]
+
+        # Should have an error about duplicate type definition
+        assert len(errors) >= 1, "Expected error for duplicate type in namespace"
+        assert any(
+            "duplicate" in e.message.lower() and "request" in e.message.lower() for e in errors
+        ), f"Expected duplicate type error, got: {[e.message for e in errors]}"
+
     def test_cross_namespace_reference_error(self) -> None:
         """Type in named datadict referencing another namespace should error (REQ-SEM-064).
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
-from typing import Literal
 
 import click
 from rich.console import Console
@@ -17,6 +19,10 @@ from designit.generators.mermaid import generate_mermaid
 from designit.model.base import DesignDocument, ValidationMessage, ValidationSeverity
 from designit.semantic.analyzer import analyze_file
 from designit.semantic.validator import validate
+
+# Graphic formats supported by GraphViz rendering
+GRAPHIC_FORMATS = ("svg", "png", "jpg", "tiff", "webp")
+ALL_FORMATS = ("mermaid", "dot") + GRAPHIC_FORMATS
 
 console = Console()
 error_console = Console(stderr=True)
@@ -188,28 +194,127 @@ def check(file: Path, no_imports: bool, strict: bool) -> None:
         sys.exit(1)
 
 
+def _check_graphviz_installed() -> None:
+    """Check if GraphViz is installed and raise a helpful error if not."""
+    missing = []
+    if shutil.which("dot") is None:
+        missing.append("dot")
+    if shutil.which("neato") is None:
+        missing.append("neato")
+
+    if missing:
+        raise click.ClickException(
+            f"GraphViz commands not found: {', '.join(missing)}. Install GraphViz with:\n"
+            "  - Ubuntu/Debian: sudo apt install graphviz\n"
+            "  - macOS: brew install graphviz\n"
+            "  - Windows: choco install graphviz"
+        )
+
+
+def _get_graphviz_engine(dot_content: str) -> str:
+    """Determine the appropriate GraphViz layout engine based on DOT content.
+
+    Returns:
+        'neato' if the DOT content specifies layout=neato, otherwise 'dot'
+    """
+    return "neato" if "layout=neato" in dot_content else "dot"
+
+
+def _render_graphviz(
+    dot_content: str,
+    output_path: Path,
+    output_format: str,
+) -> None:
+    """Render DOT content to a graphic file using the appropriate GraphViz engine.
+
+    Args:
+        dot_content: The DOT source content
+        output_path: Path to write the output file
+        output_format: Output format (svg, png, jpg, tiff, webp)
+    """
+    engine = _get_graphviz_engine(dot_content)
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".dot", delete=False) as dot_file:
+        dot_file.write(dot_content)
+        dot_file_path = Path(dot_file.name)
+
+    try:
+        result = subprocess.run(
+            [engine, f"-T{output_format}", str(dot_file_path), "-o", str(output_path)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() or "Unknown error"
+            raise click.ClickException(f"GraphViz rendering failed: {error_msg}")
+    finally:
+        dot_file_path.unlink(missing_ok=True)
+
+
+def _generate_diagrams(
+    doc: DesignDocument,
+    output_format: str,
+    include_placeholders: bool,
+) -> tuple[dict[str, str], str]:
+    """Generate diagram content based on format.
+
+    Returns:
+        Tuple of (diagrams dict, file extension)
+    """
+    if output_format == "mermaid":
+        diagrams = generate_mermaid(doc, include_placeholders)
+        extension = ".mmd"
+    else:
+        # All other formats use GraphViz DOT
+        diagrams = generate_graphviz(doc, include_placeholders)
+        extension = ".dot" if output_format == "dot" else f".{output_format}"
+    return diagrams, extension
+
+
+def _output_diagrams_to_files(
+    diagrams: dict[str, str],
+    output_dir: Path,
+    extension: str,
+    output_format: str,
+    is_graphic_format: bool,
+) -> None:
+    """Write diagrams to files in the output directory."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for name, content in diagrams.items():
+        out_file = output_dir / f"{name}{extension}"
+
+        if is_graphic_format:
+            _render_graphviz(content, out_file, output_format)
+        else:
+            out_file.write_text(content)
+
+        console.print(f"[green]Generated:[/] {out_file}")
+
+
 @main.command()
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--format",
     "-f",
     "output_format",
-    type=click.Choice(["graphviz", "dot", "mermaid"]),
-    default="mermaid",
-    help="Output format",
+    type=click.Choice(list(ALL_FORMATS)),
+    default="svg",
+    help="Output format (default: svg)",
 )
 @click.option(
     "--output",
     "-o",
     type=click.Path(path_type=Path),
-    help="Output directory (default: current directory)",
+    help="Output directory (default: ./generated)",
 )
 @click.option("--diagram", "-d", multiple=True, help="Only generate specific diagram(s)")
 @click.option("--no-placeholders", is_flag=True, help="Exclude placeholder elements")
-@click.option("--stdout", is_flag=True, help="Print to stdout instead of files")
+@click.option("--stdout", is_flag=True, help="Print to stdout instead of files (text formats only)")
 def generate(
     file: Path,
-    output_format: Literal["graphviz", "dot", "mermaid"],
+    output_format: str,
     output: Path | None,
     diagram: tuple[str, ...],
     no_placeholders: bool,
@@ -218,22 +323,25 @@ def generate(
     """Generate diagrams from a DesignIt file.
 
     FILE: Path to the .dit file to process.
+
+    Supported formats:
+      - mermaid: Mermaid diagram text (.mmd)
+      - dot: GraphViz DOT text (.dot)
+      - svg, png, jpg, tiff, webp: Rendered graphics via GraphViz
     """
     try:
+        is_graphic_format = output_format in GRAPHIC_FORMATS
+        if is_graphic_format:
+            _check_graphviz_installed()
+
+        if stdout and is_graphic_format:
+            raise click.ClickException(
+                f"Cannot use --stdout with graphic format '{output_format}'. "
+                "Use 'dot' or 'mermaid' for text output."
+            )
+
         doc = analyze_file(file)
-
-        # Normalize format
-        if output_format == "dot":
-            output_format = "graphviz"
-
-        # Generate diagrams
-        include_placeholders = not no_placeholders
-        if output_format == "graphviz":
-            diagrams = generate_graphviz(doc, include_placeholders)
-            extension = ".dot"
-        else:
-            diagrams = generate_mermaid(doc, include_placeholders)
-            extension = ".mmd"
+        diagrams, extension = _generate_diagrams(doc, output_format, not no_placeholders)
 
         # Filter diagrams if specified
         if diagram:
@@ -248,16 +356,15 @@ def generate(
             for name, content in diagrams.items():
                 console.print(Panel(Syntax(content, "text"), title=name))
         else:
-            output_dir = output or Path.cwd()
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            for name, content in diagrams.items():
-                out_file = output_dir / f"{name}{extension}"
-                out_file.write_text(content)
-                console.print(f"[green]Generated:[/] {out_file}")
+            output_dir = output or (Path.cwd() / "generated")
+            _output_diagrams_to_files(
+                diagrams, output_dir, extension, output_format, is_graphic_format
+            )
 
         console.print(f"\n[bold green]Generated {len(diagrams)} diagram(s)[/]")
 
+    except click.ClickException:
+        raise
     except Exception as e:
         error_console.print(f"[bold red]Error:[/] {e}")
         sys.exit(1)
