@@ -1535,30 +1535,30 @@ class TestDFDFlowCompoundKeys:
         """Two flows with same name but different types should coexist."""
         source = """
         datadict {
-            I_PicIX = { data: string }
+            DataExchange = { data: string }
         }
         scd Context {
             system Sys {}
-            external PicIX {}
-            flow I_PicIX: PicIX <-> Sys
+            external RemoteAPI {}
+            flow DataExchange: RemoteAPI <-> Sys
         }
         dfd Test {
             refines: Context.Sys
             process Handler {}
-            flow I_PicIX: -> Handler
-            flow I_PicIX: Handler ->
+            flow DataExchange: -> Handler
+            flow DataExchange: Handler ->
         }
         """
         doc = analyze_string(source)
         dfd = doc.dfds["Test"]
 
         # Both flows should exist with compound keys
-        assert ("I_PicIX", "inbound") in dfd.flows
-        assert ("I_PicIX", "outbound") in dfd.flows
+        assert ("DataExchange", "inbound") in dfd.flows
+        assert ("DataExchange", "outbound") in dfd.flows
 
         # They should be different flow objects
-        inbound = dfd.flows[("I_PicIX", "inbound")]
-        outbound = dfd.flows[("I_PicIX", "outbound")]
+        inbound = dfd.flows[("DataExchange", "inbound")]
+        outbound = dfd.flows[("DataExchange", "outbound")]
         assert inbound.flow_type == "inbound"
         assert outbound.flow_type == "outbound"
         assert inbound.target is not None
@@ -1635,28 +1635,28 @@ class TestDFDFlowHelperMethods:
         """get_flow should return the correct flow by name and type."""
         source = """
         datadict {
-            I_PicIX = { data: string }
+            DataExchange = { data: string }
         }
         scd Context {
             system Sys {}
-            external PicIX {}
-            flow I_PicIX: PicIX <-> Sys
+            external RemoteAPI {}
+            flow DataExchange: RemoteAPI <-> Sys
         }
         dfd Test {
             refines: Context.Sys
             process Handler {}
-            flow I_PicIX: -> Handler
-            flow I_PicIX: Handler ->
+            flow DataExchange: -> Handler
+            flow DataExchange: Handler ->
         }
         """
         doc = analyze_string(source)
         dfd = doc.dfds["Test"]
 
-        inbound = dfd.get_flow("I_PicIX", "inbound")
+        inbound = dfd.get_flow("DataExchange", "inbound")
         assert inbound is not None
         assert inbound.flow_type == "inbound"
 
-        outbound = dfd.get_flow("I_PicIX", "outbound")
+        outbound = dfd.get_flow("DataExchange", "outbound")
         assert outbound is not None
         assert outbound.flow_type == "outbound"
 
@@ -1690,24 +1690,24 @@ class TestDFDFlowHelperMethods:
         """get_flows_by_name should return all flows with that name."""
         source = """
         datadict {
-            I_PicIX = { data: string }
+            DataExchange = { data: string }
         }
         scd Context {
             system Sys {}
-            external PicIX {}
-            flow I_PicIX: PicIX <-> Sys
+            external RemoteAPI {}
+            flow DataExchange: RemoteAPI <-> Sys
         }
         dfd Test {
             refines: Context.Sys
             process Handler {}
-            flow I_PicIX: -> Handler
-            flow I_PicIX: Handler ->
+            flow DataExchange: -> Handler
+            flow DataExchange: Handler ->
         }
         """
         doc = analyze_string(source)
         dfd = doc.dfds["Test"]
 
-        flows = dfd.get_flows_by_name("I_PicIX")
+        flows = dfd.get_flows_by_name("DataExchange")
         assert len(flows) == 2
         flow_types = {f.flow_type for f in flows}
         assert flow_types == {"inbound", "outbound"}
