@@ -10,7 +10,8 @@ import pytest
 
 from designit.generators.graphviz import GraphVizGenerator
 from designit.generators.mermaid import MermaidGenerator
-from designit.model.base import ValidationSeverity
+from designit.model.base import DesignDocument, ValidationSeverity
+from designit.model.scd import SCDModel
 from designit.semantic.analyzer import analyze_file, analyze_string
 from designit.semantic.validator import validate
 
@@ -120,14 +121,14 @@ class TestSCDGeneration:
     """Tests for SCD diagram generation layout."""
 
     @pytest.fixture
-    def scd_model(self) -> None:
+    def scd_model(self) -> SCDModel:
         """Get the SCD model from the banking example."""
         examples_dir = Path(__file__).parent.parent / "examples" / "banking"
         context_file = examples_dir / "context.dit"
         doc = analyze_file(str(context_file))
         return doc.scds["BankingSystemContext"]
 
-    def test_graphviz_scd_radial_layout(self, scd_model) -> None:
+    def test_graphviz_scd_radial_layout(self, scd_model: SCDModel) -> None:
         """Test that GraphViz SCD uses neato radial layout (REQ-GEN-057)."""
         generator = GraphVizGenerator()
         output = generator.generate_scd(scd_model)
@@ -144,7 +145,7 @@ class TestSCDGeneration:
         # Verify system has filled style
         assert "fillcolor=lightyellow" in output
 
-    def test_graphviz_scd_elements(self, scd_model) -> None:
+    def test_graphviz_scd_elements(self, scd_model: SCDModel) -> None:
         """Test that GraphViz SCD contains expected elements."""
         generator = GraphVizGenerator()
         output = generator.generate_scd(scd_model)
@@ -163,7 +164,7 @@ class TestSCDGeneration:
         # Verify bidirectional flow
         assert "dir=both" in output
 
-    def test_mermaid_scd_lr_layout(self, scd_model) -> None:
+    def test_mermaid_scd_lr_layout(self, scd_model: SCDModel) -> None:
         """Test that Mermaid SCD uses LR layout (REQ-GEN-008)."""
         generator = MermaidGenerator()
         output = generator.generate_scd(scd_model)
@@ -174,7 +175,7 @@ class TestSCDGeneration:
         # Verify system is declared (stadium shape with double brackets)
         assert "[[" in output  # Stadium shape syntax
 
-    def test_mermaid_scd_elements(self, scd_model) -> None:
+    def test_mermaid_scd_elements(self, scd_model: SCDModel) -> None:
         """Test that Mermaid SCD contains expected elements."""
         generator = MermaidGenerator()
         output = generator.generate_scd(scd_model)
@@ -200,7 +201,7 @@ class TestDFDBoundaryFlowGeneration:
     """Tests for DFD boundary flow rendering (REQ-GEN-010, REQ-GEN-011, REQ-GEN-012)."""
 
     @pytest.fixture
-    def dfd_with_boundary_flows(self):
+    def dfd_with_boundary_flows(self) -> DesignDocument:
         """Create a document with a DFD that has boundary flows."""
         source = """
         datadict {
@@ -225,7 +226,9 @@ class TestDFDBoundaryFlowGeneration:
         """
         return analyze_string(source)
 
-    def test_mermaid_dfd_boundary_flows_no_crash(self, dfd_with_boundary_flows):
+    def test_mermaid_dfd_boundary_flows_no_crash(
+        self, dfd_with_boundary_flows: DesignDocument
+    ) -> None:
         """Test that Mermaid DFD generation does not crash on boundary flows."""
         generator = MermaidGenerator()
         # Should not raise AttributeError
@@ -233,7 +236,9 @@ class TestDFDBoundaryFlowGeneration:
         assert output is not None
         assert len(output) > 0
 
-    def test_mermaid_dfd_boundary_nodes_present(self, dfd_with_boundary_flows):
+    def test_mermaid_dfd_boundary_nodes_present(
+        self, dfd_with_boundary_flows: DesignDocument
+    ) -> None:
         """Test that Mermaid output contains boundary nodes (REQ-GEN-011)."""
         generator = MermaidGenerator()
         output = generator.generate_dfd(dfd_with_boundary_flows.dfds["TestDFD"])
@@ -245,7 +250,7 @@ class TestDFDBoundaryFlowGeneration:
         # Boundary class definition should be present
         assert "classDef boundary fill:none,stroke:#666,stroke-dasharray:3" in output
 
-    def test_mermaid_dfd_boundary_flow_edges(self, dfd_with_boundary_flows):
+    def test_mermaid_dfd_boundary_flow_edges(self, dfd_with_boundary_flows: DesignDocument) -> None:
         """Test that Mermaid output has correct edge connections for boundary flows."""
         generator = MermaidGenerator()
         output = generator.generate_dfd(dfd_with_boundary_flows.dfds["TestDFD"])
@@ -259,7 +264,9 @@ class TestDFDBoundaryFlowGeneration:
         # Internal flow: source -> target (normal)
         assert 'Handler -->|"InternalData"| Processor' in output
 
-    def test_graphviz_dfd_boundary_flows_no_crash(self, dfd_with_boundary_flows):
+    def test_graphviz_dfd_boundary_flows_no_crash(
+        self, dfd_with_boundary_flows: DesignDocument
+    ) -> None:
         """Test that GraphViz DFD generation does not crash on boundary flows."""
         generator = GraphVizGenerator()
         # Should not raise AttributeError
@@ -267,7 +274,9 @@ class TestDFDBoundaryFlowGeneration:
         assert output is not None
         assert len(output) > 0
 
-    def test_graphviz_dfd_boundary_nodes_present(self, dfd_with_boundary_flows):
+    def test_graphviz_dfd_boundary_nodes_present(
+        self, dfd_with_boundary_flows: DesignDocument
+    ) -> None:
         """Test that GraphViz output contains boundary nodes (REQ-GEN-012)."""
         generator = GraphVizGenerator()
         output = generator.generate_dfd(dfd_with_boundary_flows.dfds["TestDFD"])
@@ -276,7 +285,9 @@ class TestDFDBoundaryFlowGeneration:
         assert '"_boundary_Request" [shape=point label="" width=0.15]' in output
         assert '"_boundary_Response" [shape=point label="" width=0.15]' in output
 
-    def test_graphviz_dfd_boundary_flow_edges(self, dfd_with_boundary_flows):
+    def test_graphviz_dfd_boundary_flow_edges(
+        self, dfd_with_boundary_flows: DesignDocument
+    ) -> None:
         """Test that GraphViz output has correct edge connections for boundary flows."""
         generator = GraphVizGenerator()
         output = generator.generate_dfd(dfd_with_boundary_flows.dfds["TestDFD"])
@@ -290,7 +301,7 @@ class TestDFDBoundaryFlowGeneration:
         # Internal flow: source -> target (normal)
         assert '"Handler" -> "Processor" [label="InternalData"]' in output
 
-    def test_dfd_without_boundary_flows_still_works(self):
+    def test_dfd_without_boundary_flows_still_works(self) -> None:
         """Test that DFDs with only internal flows still generate correctly."""
         # A DFD that refines a system but only has internal flows
         source = """
@@ -336,7 +347,7 @@ class TestBidirectionalBoundaryFlowRendering:
     """Tests for bidirectional boundary flow rendering (REQ-GEN-013)."""
 
     @pytest.fixture
-    def dfd_with_bidirectional_same_process(self):
+    def dfd_with_bidirectional_same_process(self) -> DesignDocument:
         """Create a DFD where same process handles both directions of a flow."""
         source = """
         datadict {
@@ -357,7 +368,7 @@ class TestBidirectionalBoundaryFlowRendering:
         return analyze_string(source)
 
     @pytest.fixture
-    def dfd_with_bidirectional_different_processes(self):
+    def dfd_with_bidirectional_different_processes(self) -> DesignDocument:
         """Create a DFD where different processes handle each direction."""
         source = """
         datadict {
@@ -378,7 +389,9 @@ class TestBidirectionalBoundaryFlowRendering:
         """
         return analyze_string(source)
 
-    def test_mermaid_same_process_bidirectional_edge(self, dfd_with_bidirectional_same_process):
+    def test_mermaid_same_process_bidirectional_edge(
+        self, dfd_with_bidirectional_same_process: DesignDocument
+    ) -> None:
         """Mermaid should render single bidirectional edge when same process handles both."""
         generator = MermaidGenerator()
         output = generator.generate_dfd(dfd_with_bidirectional_same_process.dfds["Test"])
@@ -393,8 +406,8 @@ class TestBidirectionalBoundaryFlowRendering:
         assert output.count('-->|"I_PicIX"|') <= 1  # At most one directional edge if any
 
     def test_mermaid_different_processes_separate_edges(
-        self, dfd_with_bidirectional_different_processes
-    ):
+        self, dfd_with_bidirectional_different_processes: DesignDocument
+    ) -> None:
         """Mermaid should render separate edges when different processes handle each direction."""
         generator = MermaidGenerator()
         output = generator.generate_dfd(dfd_with_bidirectional_different_processes.dfds["Test"])
@@ -408,7 +421,9 @@ class TestBidirectionalBoundaryFlowRendering:
         # Should have two separate edges (not bidirectional)
         assert "<-->" not in output or output.count("<-->") == 0
 
-    def test_graphviz_same_process_bidirectional_edge(self, dfd_with_bidirectional_same_process):
+    def test_graphviz_same_process_bidirectional_edge(
+        self, dfd_with_bidirectional_same_process: DesignDocument
+    ) -> None:
         """GraphViz should render single edge with dir=both when same process handles both."""
         generator = GraphVizGenerator()
         output = generator.generate_dfd(dfd_with_bidirectional_same_process.dfds["Test"])
@@ -423,8 +438,8 @@ class TestBidirectionalBoundaryFlowRendering:
         assert 'label="I_PicIX"' in output
 
     def test_graphviz_different_processes_separate_edges(
-        self, dfd_with_bidirectional_different_processes
-    ):
+        self, dfd_with_bidirectional_different_processes: DesignDocument
+    ) -> None:
         """GraphViz should render separate edges when different processes handle each direction."""
         generator = GraphVizGenerator()
         output = generator.generate_dfd(dfd_with_bidirectional_different_processes.dfds["Test"])
@@ -437,8 +452,8 @@ class TestBidirectionalBoundaryFlowRendering:
         assert "dir=both" not in output
 
     def test_mermaid_single_boundary_node_for_bidirectional(
-        self, dfd_with_bidirectional_same_process
-    ):
+        self, dfd_with_bidirectional_same_process: DesignDocument
+    ) -> None:
         """Should create only one boundary node for bidirectional case."""
         generator = MermaidGenerator()
         output = generator.generate_dfd(dfd_with_bidirectional_same_process.dfds["Test"])
@@ -451,8 +466,8 @@ class TestBidirectionalBoundaryFlowRendering:
         assert len(boundary_declarations) == 1
 
     def test_graphviz_single_boundary_node_for_bidirectional(
-        self, dfd_with_bidirectional_same_process
-    ):
+        self, dfd_with_bidirectional_same_process: DesignDocument
+    ) -> None:
         """Should create only one boundary node for bidirectional case."""
         generator = GraphVizGenerator()
         output = generator.generate_dfd(dfd_with_bidirectional_same_process.dfds["Test"])

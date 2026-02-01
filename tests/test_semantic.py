@@ -1592,7 +1592,9 @@ class TestDFDFlowCompoundKeys:
         assert ("InternalFlow", "internal") in dfd.flows
         internal = dfd.flows[("InternalFlow", "internal")]
         assert internal.flow_type == "internal"
+        assert internal.source is not None
         assert internal.source.name == "A"
+        assert internal.target is not None
         assert internal.target.name == "B"
 
     def test_duplicate_flow_same_name_and_type_warning(self) -> None:

@@ -3,7 +3,11 @@
 import pytest
 
 from designit.parser.ast_nodes import (
+    ArrayDefNode,
+    DataDictTypeRefNode,
     DocumentNode,
+    StructDefNode,
+    UnionDefNode,
 )
 from designit.parser.parser import ParseError, parse_string
 
@@ -612,7 +616,11 @@ dfd Test {
         locations = [f.location for f in flows]
         assert all(loc is not None for loc in locations), "All flows should have locations"
 
-        lines = [loc.line for loc in locations]
+        for loc in locations:
+            assert loc is not None
+        # Type narrowing: after the loop, mypy still sees Optional, so we filter explicitly
+        non_null_locations = [loc for loc in locations if loc is not None]
+        lines = [loc.line for loc in non_null_locations]
         assert lines == [5, 6, 7], f"Expected lines [5, 6, 7], got {lines}"
 
     def test_flow_location_has_column(self) -> None:
@@ -1287,6 +1295,7 @@ class TestQualifiedTypeRefParsing:
         assert request_def.name == "Request"
 
         struct = request_def.definition
+        assert isinstance(struct, StructDefNode)
         assert len(struct.fields) == 2
 
         # Qualified type reference field
@@ -1316,6 +1325,7 @@ class TestQualifiedTypeRefParsing:
         doc = parse_string(source)
         person = doc.datadicts[0].definitions[1]
         struct = person.definition
+        assert isinstance(struct, StructDefNode)
 
         name_field = struct.fields[0]
         assert name_field.type_ref.namespace is None
@@ -1343,17 +1353,19 @@ class TestQualifiedTypeRefParsing:
         doc = parse_string(source)
         combined = doc.datadicts[2].definitions[0]
         union = combined.definition
+        assert isinstance(union, UnionDefNode)
 
         assert len(union.alternatives) == 3
 
         # First alternative: qualified
         alt1 = union.alternatives[0]
-        assert hasattr(alt1, "namespace")
+        assert isinstance(alt1, DataDictTypeRefNode)
         assert alt1.namespace == "ServiceA"
         assert alt1.name == "TypeA"
 
         # Second alternative: qualified
         alt2 = union.alternatives[1]
+        assert isinstance(alt2, DataDictTypeRefNode)
         assert alt2.namespace == "ServiceB"
         assert alt2.name == "TypeB"
 
@@ -1377,12 +1389,14 @@ class TestQualifiedTypeRefParsing:
 
         item_list = doc.datadicts[1].definitions[0]
         array1 = item_list.definition
+        assert isinstance(array1, ArrayDefNode)
         assert array1.element_type.namespace == "ServiceA"
         assert array1.element_type.name == "Item"
         assert array1.element_type.qualified_name == "ServiceA.Item"
 
         string_list = doc.datadicts[1].definitions[1]
         array2 = string_list.definition
+        assert isinstance(array2, ArrayDefNode)
         assert array2.element_type.namespace is None
         assert array2.element_type.name == "string"
 
@@ -1398,6 +1412,7 @@ class TestQualifiedTypeRefParsing:
         """
         doc = parse_string(source)
         struct = doc.datadicts[0].definitions[0].definition
+        assert isinstance(struct, StructDefNode)
 
         qualified = struct.fields[0].type_ref
         assert qualified.namespace == "Other"
@@ -1425,6 +1440,7 @@ class TestQualifiedTypeRefParsing:
         """
         doc = parse_string(source)
         struct = doc.datadicts[1].definitions[0].definition
+        assert isinstance(struct, StructDefNode)
 
         config_field = struct.fields[0]
         assert config_field.type_ref.namespace == "ServiceA"
