@@ -27,8 +27,32 @@ class SCDDatastore(BaseElement):
     pass
 
 
+class SCDFlowTypeRef(BaseModel):
+    """A reference to a type in the data dictionary for SCD flows.
+
+    If namespace is None, refers to an anonymous datadict type.
+    If namespace is set, refers to a namespaced type (Namespace.TypeName).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    namespace: str | None = None
+    name: str
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the fully qualified type name."""
+        if self.namespace:
+            return f"{self.namespace}.{self.name}"
+        return self.name
+
+
 class SCDFlow(BaseModel):
-    """A data flow in an SCD with bidirectional support."""
+    """A data flow in an SCD with bidirectional support.
+
+    The type_ref field optionally specifies the data type being transferred,
+    which may be a qualified reference to a namespaced datadict type.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -36,6 +60,7 @@ class SCDFlow(BaseModel):
     source: ElementReference
     target: ElementReference
     direction: Literal["inbound", "outbound", "bidirectional"]
+    type_ref: SCDFlowTypeRef | None = None
     description: str | None = None
     source_file: str | None = None
     line: int | None = None

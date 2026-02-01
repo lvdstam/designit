@@ -1704,3 +1704,451 @@ class TestDFDFlowHelperMethods:
 
         flows = dfd.get_flows_by_name("NonExistent")
         assert flows == []
+
+
+class TestNamespacedDataDict:
+    """Tests for namespaced data dictionary validation.
+
+    REQ-GRAM-051: Named data dictionary with namespace identifier.
+    REQ-SEM-063: Namespaced types must be qualified in flows.
+    REQ-SEM-064: Cross-namespace reference restriction.
+    REQ-SEM-065: Datadict namespace merging.
+    """
+
+    def test_qualified_namespaced_type_valid(self) -> None:
+        """Using qualified namespaced type in flow should be valid."""
+        source = """
+        datadict PaymentGateway {
+            PaymentRequest = { amount: decimal }
+        }
+
+        scd Context {
+            system Sys {}
+            external PayGw {}
+            flow PaymentGateway.PaymentRequest: Sys -> PayGw
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) == 0, f"Expected no errors, got: {[e.message for e in errors]}"
+
+    def test_unqualified_namespaced_type_error(self) -> None:
+        """Using unqualified namespaced type in flow should produce an error (REQ-SEM-063)."""
+        source = """
+        datadict PaymentGateway {
+            PaymentRequest = { amount: decimal }
+        }
+
+        scd Context {
+            system Sys {}
+            external PayGw {}
+            flow PaymentRequest: Sys -> PayGw
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        # Should mention that the type exists in a namespace
+        assert any(
+            "PaymentRequest" in e.message
+            and ("namespace" in e.message.lower() or "qualified" in e.message.lower())
+            for e in errors
+        )
+
+    def test_anonymous_type_no_qualification_needed(self) -> None:
+        """Anonymous datadict types should work without qualification."""
+        source = """
+        datadict {
+            SimpleRequest = { data: string }
+        }
+
+        scd Context {
+            system Sys {}
+            external E {}
+            flow SimpleRequest: E -> Sys
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) == 0, f"Expected no errors, got: {[e.message for e in errors]}"
+
+    def test_namespace_merging_same_namespace(self) -> None:
+        """Multiple datadict blocks with same namespace should merge (REQ-SEM-065)."""
+        source = """
+        datadict PaymentGateway {
+            Request1 = { data: string }
+        }
+
+        datadict PaymentGateway {
+            Request2 = { data: string }
+        }
+
+        scd Context {
+            system Sys {}
+            external PayGw {}
+            flow PaymentGateway.Request1: Sys -> PayGw
+            flow PaymentGateway.Request2: PayGw -> Sys
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) == 0, f"Expected no errors, got: {[e.message for e in errors]}"
+
+        # Verify both types exist in datadict
+        dd = doc.data_dictionary
+        assert dd is not None
+        assert "PaymentGateway.Request1" in dd.definitions
+        assert "PaymentGateway.Request2" in dd.definitions
+
+    def test_cross_namespace_reference_error(self) -> None:
+        """Type in named datadict referencing another namespace should error (REQ-SEM-064).
+
+        A type in ServiceB cannot reference ServiceA.TypeA.
+        Only same-namespace or anonymous types can be referenced.
+        """
+        source = """
+        datadict ServiceA {
+            TypeA = { data: string }
+        }
+
+        datadict ServiceB {
+            TypeB = { ref: ServiceA.TypeA }
+        }
+
+        scd Context {
+            system Sys {}
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any(
+            "namespace" in e.message.lower() and "reference" in e.message.lower() for e in errors
+        )
+
+    def test_namespaced_type_can_reference_anonymous_type(self) -> None:
+        """Type in named datadict can reference anonymous datadict types."""
+        source = """
+        datadict {
+            CommonType = { id: string }
+        }
+
+        datadict ServiceA {
+            TypeA = { common: CommonType }
+        }
+
+        scd Context {
+            system Sys {}
+            external Svc {}
+            flow ServiceA.TypeA: Sys -> Svc
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # Should not have cross-namespace error for referencing anonymous types
+        cross_ns_errors = [
+            e
+            for e in errors
+            if "namespace" in e.message.lower() and "reference" in e.message.lower()
+        ]
+        assert len(cross_ns_errors) == 0, f"Got cross-namespace errors: {cross_ns_errors}"
+
+    def test_namespaced_type_can_reference_same_namespace(self) -> None:
+        """Type in named datadict can reference types in same namespace."""
+        source = """
+        datadict PaymentGateway {
+            Amount = { value: decimal }
+            PaymentRequest = { amount: Amount }
+        }
+
+        scd Context {
+            system Sys {}
+            external PayGw {}
+            flow PaymentGateway.PaymentRequest: Sys -> PayGw
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) == 0, f"Expected no errors, got: {[e.message for e in errors]}"
+
+    def test_dfd_qualified_flow_type_valid(self) -> None:
+        """DFD flows with qualified namespaced types should be valid."""
+        source = """
+        datadict PaymentGateway {
+            PaymentRequest = { amount: decimal }
+        }
+
+        scd Context {
+            system Sys {}
+            external PayGw {}
+            flow PaymentGateway.PaymentRequest: PayGw -> Sys
+        }
+
+        dfd Level0 {
+            refines: Context.Sys
+
+            process Handler {}
+
+            flow PaymentGateway.PaymentRequest: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) == 0, f"Expected no errors, got: {[e.message for e in errors]}"
+
+    def test_dfd_unqualified_namespaced_type_error(self) -> None:
+        """DFD flows with unqualified namespaced types should error."""
+        source = """
+        datadict PaymentGateway {
+            PaymentRequest = { amount: decimal }
+        }
+
+        scd Context {
+            system Sys {}
+            external PayGw {}
+            flow PaymentGateway.PaymentRequest: PayGw -> Sys
+        }
+
+        dfd Level0 {
+            refines: Context.Sys
+
+            process Handler {}
+
+            flow PaymentRequest: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("PaymentRequest" in e.message for e in errors)
+
+    def test_datadict_model_qualified_name_property(self) -> None:
+        """DataDefinition.qualified_name should return correct value."""
+        source = """
+        datadict MyNamespace {
+            MyType = { data: string }
+        }
+
+        datadict {
+            AnonymousType = { data: string }
+        }
+        """
+        doc = analyze_string(source)
+        dd = doc.data_dictionary
+        assert dd is not None
+
+        # Namespaced type
+        ns_type = dd.definitions.get("MyNamespace.MyType")
+        assert ns_type is not None
+        assert ns_type.qualified_name == "MyNamespace.MyType"
+        assert ns_type.namespace == "MyNamespace"
+        assert ns_type.name == "MyType"
+
+        # Anonymous type
+        anon_type = dd.definitions.get("AnonymousType")
+        assert anon_type is not None
+        assert anon_type.qualified_name == "AnonymousType"
+        assert anon_type.namespace is None
+        assert anon_type.name == "AnonymousType"
+
+    def test_datadict_model_helper_methods(self) -> None:
+        """DataDictionaryModel helper methods should work correctly."""
+        source = """
+        datadict {
+            AnonType1 = { data: string }
+            AnonType2 = { data: string }
+        }
+
+        datadict ServiceA {
+            TypeA = { data: string }
+        }
+
+        datadict ServiceB {
+            TypeB = { data: string }
+        }
+        """
+        doc = analyze_string(source)
+        dd = doc.data_dictionary
+        assert dd is not None
+
+        # Test get_anonymous_types
+        anon = dd.get_anonymous_types()
+        assert "AnonType1" in anon
+        assert "AnonType2" in anon
+        assert "ServiceA.TypeA" not in anon
+
+        # Test get_namespaced_types
+        namespaced = dd.get_namespaced_types()
+        assert "ServiceA.TypeA" in namespaced
+        assert "ServiceB.TypeB" in namespaced
+        assert "AnonType1" not in namespaced
+
+        # Test get_namespaces
+        namespaces = dd.get_namespaces()
+        assert "ServiceA" in namespaces
+        assert "ServiceB" in namespaces
+
+        # Test get_types_by_namespace
+        service_a_types = dd.get_types_by_namespace("ServiceA")
+        assert "ServiceA.TypeA" in service_a_types
+        assert "ServiceB.TypeB" not in service_a_types
+
+    def test_namespace_shadowing_warning(self) -> None:
+        """Namespace name matching global type name should emit warning (REQ-SEM-066)."""
+        source = """
+        datadict {
+            Request = { id: string }
+        }
+
+        datadict Request {
+            Payload = { data: string }
+        }
+
+        scd Context {
+            system Sys {}
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        assert len(warnings) >= 1
+        # Should warn that namespace "Request" shadows global type "Request"
+        assert any("shadow" in w.message.lower() for w in warnings)
+        assert any("Request" in w.message for w in warnings)
+
+    def test_namespace_shadowing_warning_includes_both_names(self) -> None:
+        """Namespace shadowing warning should mention both namespace and type."""
+        source = """
+        datadict {
+            Common = { id: string }
+        }
+
+        datadict Common {
+            Payload = { data: string }
+        }
+
+        scd Context {
+            system Sys {}
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        shadowing_warnings = [w for w in warnings if "shadow" in w.message.lower()]
+        assert len(shadowing_warnings) >= 1
+        # Warning should mention "Common" (both as namespace and type)
+        assert any("Common" in w.message for w in shadowing_warnings)
+
+    def test_type_resolution_same_namespace_first(self) -> None:
+        """Type resolution should prefer same namespace over global (REQ-SEM-067)."""
+        source = """
+        datadict {
+            Amount = { value: string }
+        }
+
+        datadict Payment {
+            Amount = { value: decimal }
+            Request = { amount: Amount }
+        }
+
+        scd Context {
+            system Sys {}
+            external PayGw {}
+            flow Payment.Request: Sys -> PayGw
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # Should resolve Amount to Payment.Amount (same namespace), not global Amount
+        # No undefined type errors expected
+        undefined_errors = [e for e in errors if "undefined" in e.message.lower()]
+        assert len(undefined_errors) == 0, f"Got undefined errors: {undefined_errors}"
+
+    def test_type_resolution_fallback_to_global(self) -> None:
+        """Type resolution should fall back to global when not in same namespace."""
+        source = """
+        datadict {
+            CommonId = { value: string }
+        }
+
+        datadict ServiceA {
+            Request = { id: CommonId }
+        }
+
+        scd Context {
+            system Sys {}
+            external Svc {}
+            flow ServiceA.Request: Sys -> Svc
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # CommonId should resolve to global CommonId (no ServiceA.CommonId exists)
+        undefined_errors = [e for e in errors if "undefined" in e.message.lower()]
+        assert len(undefined_errors) == 0, f"Got undefined errors: {undefined_errors}"
+
+    def test_qualified_ref_to_different_namespace_error(self) -> None:
+        """Qualified reference to different namespace should error (REQ-SEM-064)."""
+        source = """
+        datadict ServiceA {
+            TypeA = { data: string }
+        }
+
+        datadict ServiceB {
+            TypeB = { ref: ServiceA.TypeA }
+        }
+
+        scd Context {
+            system Sys {}
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        # Should error about cross-namespace reference
+        cross_ns_errors = [
+            e for e in errors if "namespace" in e.message.lower() or "cross" in e.message.lower()
+        ]
+        assert len(cross_ns_errors) >= 1, f"Expected cross-namespace error, got: {errors}"
+
+    def test_qualified_ref_exact_resolution(self) -> None:
+        """Qualified type reference should resolve to exact qualified name."""
+        source = """
+        datadict {
+            TypeA = { data: string }
+        }
+
+        datadict ServiceA {
+            TypeA = { data: decimal }
+            TypeB = { ref: ServiceA.TypeA }
+        }
+
+        scd Context {
+            system Sys {}
+            external Svc {}
+            flow ServiceA.TypeB: Sys -> Svc
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # ServiceA.TypeA should resolve exactly to ServiceA.TypeA (not global TypeA)
+        # This is allowed because it's the same namespace
+        cross_ns_errors = [
+            e
+            for e in errors
+            if "namespace" in e.message.lower() and "reference" in e.message.lower()
+        ]
+        assert len(cross_ns_errors) == 0, f"Got unexpected errors: {cross_ns_errors}"

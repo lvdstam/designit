@@ -19,6 +19,7 @@ from designit.model.datadict import (
     FieldConstraintType,
     StructField,
     StructType,
+    TypeRef,
     TypeReference,
     UnionType,
 )
@@ -29,6 +30,7 @@ from designit.model.dfd import (
     ExternalEntity,
     FlowKey,
     FlowType,
+    FlowTypeRef,
     Process,
     RefinesRef,
 )
@@ -45,6 +47,7 @@ from designit.model.scd import (
     SCDDatastore,
     SCDExternalEntity,
     SCDFlow,
+    SCDFlowTypeRef,
     SCDModel,
     System,
 )
@@ -65,15 +68,18 @@ from designit.parser.ast_nodes import (
     ConstraintNode,
     DataDefNode,
     DataDictNode,
+    DataDictTypeRefNode,
     DFDNode,
     DocumentNode,
     EntityNode,
     ERDNode,
     FieldConstraintNode,
+    FlowTypeRefNode,
     ModuleNode,
     PlaceholderNode,
     RelationshipNode,
     SCDNode,
+    SimpleTypeRefNode,
     StateNode,
     STDNode,
     StructDefNode,
@@ -81,7 +87,6 @@ from designit.parser.ast_nodes import (
     StructureNode,
     SystemNode,
     TransitionNode,
-    TypeRefNode,
     UnionDefNode,
 )
 from designit.semantic.resolver import resolve_imports
@@ -156,6 +161,32 @@ class SemanticAnalyzer:
         if isinstance(node, PlaceholderNode):
             return True
         return node.is_placeholder
+
+    def _convert_flow_type_ref(self, node: FlowTypeRefNode | None) -> FlowTypeRef | None:
+        """Convert a FlowTypeRefNode to a FlowTypeRef model.
+
+        Args:
+            node: The AST node for the flow type reference.
+
+        Returns:
+            A FlowTypeRef model or None if no type ref.
+        """
+        if node is None:
+            return None
+        return FlowTypeRef(namespace=node.namespace, name=node.name)
+
+    def _convert_scd_flow_type_ref(self, node: FlowTypeRefNode | None) -> SCDFlowTypeRef | None:
+        """Convert a FlowTypeRefNode to an SCDFlowTypeRef model.
+
+        Args:
+            node: The AST node for the flow type reference.
+
+        Returns:
+            An SCDFlowTypeRef model or None if no type ref.
+        """
+        if node is None:
+            return None
+        return SCDFlowTypeRef(namespace=node.namespace, name=node.name)
 
     # ============================================
     # DFD Analysis
@@ -255,6 +286,7 @@ class SemanticAnalyzer:
                 source=source_ref,
                 target=target_ref,
                 flow_type=flow_type,
+                type_ref=self._convert_flow_type_ref(flow.type_ref),
                 source_file=source_file,
                 line=flow.location.line if flow.location else None,
             )
@@ -455,21 +487,48 @@ class SemanticAnalyzer:
     def _analyze_struct_field(self, node: StructFieldNode) -> StructField:
         """Analyze a struct field node."""
         constraints = [self._analyze_field_constraint(c) for c in node.constraints]
+        type_ref = self._analyze_datadict_type_ref(node.type_ref)
         return StructField(
             name=node.name,
-            type_name=node.type_name,
+            type_ref=type_ref,
             constraints=constraints,
         )
 
+    def _analyze_datadict_type_ref(self, node: DataDictTypeRefNode) -> TypeRef:
+        """Convert AST DataDictTypeRefNode to semantic model TypeRef."""
+        return TypeRef(namespace=node.namespace, name=node.name)
+
+    def _analyze_union_alternatives(
+        self, alternatives: list[str | DataDictTypeRefNode]
+    ) -> list[str | TypeRef]:
+        """Convert union alternatives from AST to semantic model."""
+        result: list[str | TypeRef] = []
+        for alt in alternatives:
+            if isinstance(alt, DataDictTypeRefNode):
+                result.append(self._analyze_datadict_type_ref(alt))
+            else:
+                result.append(alt)
+        return result
+
     def _analyze_data_definition(
-        self, node: DataDefNode, source_file: str | None
+        self, node: DataDefNode, source_file: str | None, namespace: str | None = None
     ) -> DataDefinition:
-        """Analyze a data definition node."""
+        """Analyze a data definition node.
+
+        Args:
+            node: The data definition AST node.
+            source_file: The source file path.
+            namespace: The namespace for this definition (None for anonymous datadict).
+
+        Returns:
+            A DataDefinition model with the appropriate namespace set.
+        """
         defn = node.definition
 
         if isinstance(defn, PlaceholderNode):
             return DataDefinition(
                 name=node.name,
+                namespace=namespace,
                 is_placeholder=True,
                 source_file=source_file,
                 line=node.location.line if node.location else None,
@@ -480,31 +539,37 @@ class SemanticAnalyzer:
                 fields[field.name] = self._analyze_struct_field(field)
             return DataDefinition(
                 name=node.name,
+                namespace=namespace,
                 definition=StructType(fields=fields),
                 source_file=source_file,
                 line=node.location.line if node.location else None,
             )
         elif isinstance(defn, UnionDefNode):
+            alternatives = self._analyze_union_alternatives(defn.alternatives)
             return DataDefinition(
                 name=node.name,
-                definition=UnionType(alternatives=defn.alternatives),
+                namespace=namespace,
+                definition=UnionType(alternatives=alternatives),
                 source_file=source_file,
                 line=node.location.line if node.location else None,
             )
         elif isinstance(defn, ArrayDefNode):
+            element_type = self._analyze_datadict_type_ref(defn.element_type)
             return DataDefinition(
                 name=node.name,
+                namespace=namespace,
                 definition=ArrayType(
-                    element_type=defn.element_type,
+                    element_type=element_type,
                     min_length=defn.min_length,
                     max_length=defn.max_length,
                 ),
                 source_file=source_file,
                 line=node.location.line if node.location else None,
             )
-        elif isinstance(defn, TypeRefNode):
+        elif isinstance(defn, SimpleTypeRefNode):
             return DataDefinition(
                 name=node.name,
+                namespace=namespace,
                 definition=TypeReference(name=defn.name),
                 source_file=source_file,
                 line=node.location.line if node.location else None,
@@ -512,19 +577,35 @@ class SemanticAnalyzer:
         else:
             return DataDefinition(
                 name=node.name,
+                namespace=namespace,
                 is_placeholder=True,
                 source_file=source_file,
                 line=node.location.line if node.location else None,
             )
 
     def _analyze_datadict(self, node: DataDictNode, source_file: str | None) -> DataDictionaryModel:
-        """Analyze a data dictionary AST node."""
+        """Analyze a data dictionary AST node.
+
+        Supports both anonymous datadicts (namespace=None) and named/namespaced datadicts.
+        For named datadicts, types are stored with qualified keys (Namespace.TypeName).
+
+        Args:
+            node: The data dictionary AST node.
+            source_file: The source file path.
+
+        Returns:
+            A DataDictionaryModel with definitions keyed by qualified name.
+        """
         model = DataDictionaryModel(source_file=source_file)
+        namespace = node.namespace  # May be None for anonymous datadict
 
         for defn in node.definitions:
-            if defn.name in model.definitions:
-                self._warning(f"Duplicate data definition: {defn.name}", defn.name)
-            model.definitions[defn.name] = self._analyze_data_definition(defn, source_file)
+            data_def = self._analyze_data_definition(defn, source_file, namespace)
+            # Use qualified name as key (includes namespace if present)
+            qualified_name = data_def.qualified_name
+            if qualified_name in model.definitions:
+                self._warning(f"Duplicate data definition: {qualified_name}", defn.name)
+            model.definitions[qualified_name] = data_def
 
         return model
 
@@ -598,6 +679,7 @@ class SemanticAnalyzer:
                 source=ElementReference(name=flow.source),
                 target=ElementReference(name=flow.target),
                 direction=direction,
+                type_ref=self._convert_scd_flow_type_ref(flow.type_ref),
                 source_file=source_file,
                 line=flow.location.line if flow.location else None,
             )

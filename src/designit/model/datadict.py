@@ -27,13 +27,41 @@ class FieldConstraint(BaseModel):
     value: str | int | float | None = None
 
 
+class TypeRef(BaseModel):
+    """A type reference, optionally qualified with namespace.
+
+    Used in struct fields, union alternatives, and array element types.
+
+    Examples:
+    - Simple: TypeRef(namespace=None, name="Address")
+    - Qualified: TypeRef(namespace="ServiceA", name="Request")
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    namespace: str | None = None
+    name: str
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the fully qualified name."""
+        if self.namespace:
+            return f"{self.namespace}.{self.name}"
+        return self.name
+
+    @property
+    def is_qualified(self) -> bool:
+        """Check if this is a qualified (namespaced) reference."""
+        return self.namespace is not None
+
+
 class StructField(BaseModel):
     """A field in a struct definition."""
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    type_name: str
+    type_ref: TypeRef
     constraints: list[FieldConstraint] = Field(default_factory=list)
     description: str | None = None
 
@@ -52,11 +80,14 @@ class StructType(BaseModel):
 
 
 class UnionType(BaseModel):
-    """A union/variant type definition."""
+    """A union/variant type definition.
+
+    Alternatives can be string literals (as str) or type references (as TypeRef).
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    alternatives: list[str] = Field(default_factory=list)
+    alternatives: list[str | TypeRef] = Field(default_factory=list)
 
 
 class ArrayType(BaseModel):
@@ -64,7 +95,7 @@ class ArrayType(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    element_type: str
+    element_type: TypeRef
     min_length: int | None = None
     max_length: int | None = None
 
@@ -82,9 +113,21 @@ TypeDefinition = StructType | UnionType | ArrayType | TypeReference | None
 
 
 class DataDefinition(BaseElement):
-    """A data definition in the data dictionary."""
+    """A data definition in the data dictionary.
 
+    If namespace is None, this is an anonymous type accessible without qualification.
+    If namespace is set, the type must be qualified as Namespace.TypeName in flows.
+    """
+
+    namespace: str | None = None
     definition: TypeDefinition = None
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the fully qualified name."""
+        if self.namespace:
+            return f"{self.namespace}.{self.name}"
+        return self.name
 
     @property
     def is_struct(self) -> bool:
@@ -108,7 +151,12 @@ class DataDefinition(BaseElement):
 
 
 class DataDictionaryModel(BaseModel):
-    """A Data Dictionary model."""
+    """A Data Dictionary model.
+
+    The definitions dict uses qualified names as keys:
+    - Anonymous types: "TypeName"
+    - Namespaced types: "Namespace.TypeName"
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -116,8 +164,30 @@ class DataDictionaryModel(BaseModel):
     source_file: str | None = None
 
     def get_definition(self, name: str) -> DataDefinition | None:
-        """Get a definition by name."""
+        """Get a definition by name (qualified or unqualified)."""
         return self.definitions.get(name)
+
+    def get_anonymous_types(self) -> dict[str, DataDefinition]:
+        """Get all types from anonymous datadicts (no namespace)."""
+        return {name: defn for name, defn in self.definitions.items() if defn.namespace is None}
+
+    def get_namespaced_types(self) -> dict[str, DataDefinition]:
+        """Get all types from named datadicts (with namespace)."""
+        return {name: defn for name, defn in self.definitions.items() if defn.namespace is not None}
+
+    def get_types_by_namespace(self, namespace: str) -> dict[str, DataDefinition]:
+        """Get all types from a specific namespace."""
+        return {
+            name: defn for name, defn in self.definitions.items() if defn.namespace == namespace
+        }
+
+    def get_namespaces(self) -> set[str]:
+        """Get all namespace names (excluding anonymous)."""
+        return {defn.namespace for defn in self.definitions.values() if defn.namespace is not None}
+
+    def find_by_simple_name(self, simple_name: str) -> list[DataDefinition]:
+        """Find all types with a given simple name (may be in multiple namespaces)."""
+        return [defn for defn in self.definitions.values() if defn.name == simple_name]
 
     def resolve_type(self, type_name: str) -> DataDefinition | None:
         """Resolve a type reference to its definition."""
@@ -126,9 +196,12 @@ class DataDictionaryModel(BaseModel):
             return self.resolve_type(defn.definition.name)
         return defn
 
-    def get_all_referenced_types(self, type_name: str) -> set[str]:
-        """Get all types referenced by a definition (recursively)."""
-        result: set[str] = set()
+    def get_all_referenced_types(self, type_name: str) -> set[TypeRef]:
+        """Get all types referenced by a definition (recursively).
+
+        Returns TypeRef objects to preserve namespace information.
+        """
+        result: set[TypeRef] = set()
         visited: set[str] = set()
 
         def collect(name: str) -> None:
@@ -142,17 +215,21 @@ class DataDictionaryModel(BaseModel):
 
             if isinstance(defn.definition, StructType):
                 for field in defn.definition.fields.values():
-                    result.add(field.type_name)
-                    collect(field.type_name)
+                    result.add(field.type_ref)
+                    collect(field.type_ref.qualified_name)
             elif isinstance(defn.definition, UnionType):
                 for alt in defn.definition.alternatives:
-                    result.add(alt)
-                    collect(alt)
+                    if isinstance(alt, TypeRef):
+                        result.add(alt)
+                        collect(alt.qualified_name)
+                    # String literals are not type references, skip them
             elif isinstance(defn.definition, ArrayType):
                 result.add(defn.definition.element_type)
-                collect(defn.definition.element_type)
+                collect(defn.definition.element_type.qualified_name)
             elif isinstance(defn.definition, TypeReference):
-                result.add(defn.definition.name)
+                # Simple type reference (top-level TypeName = OtherType)
+                ref = TypeRef(namespace=None, name=defn.definition.name)
+                result.add(ref)
                 collect(defn.definition.name)
 
         collect(type_name)

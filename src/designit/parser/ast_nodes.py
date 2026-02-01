@@ -45,6 +45,25 @@ class PlaceholderNode(ASTNode):
 # ============================================
 
 
+class FlowTypeRefNode(ASTNode):
+    """A reference to a flow type, possibly qualified with namespace.
+
+    Examples:
+    - Simple: "Money" -> namespace=None, name="Money"
+    - Qualified: "PaymentGateway.Request" -> namespace="PaymentGateway", name="Request"
+    """
+
+    namespace: str | None = None
+    name: str
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the fully qualified name."""
+        if self.namespace:
+            return f"{self.namespace}.{self.name}"
+        return self.name
+
+
 class PropertyNode(ASTNode):
     """A key-value property."""
 
@@ -118,9 +137,12 @@ class FlowNode(ASTNode):
     For boundary flows:
       - Inbound: source is None, target is set
       - Outbound: source is set, target is None
+
+    The type_ref contains the flow type, which may be qualified (Namespace.TypeName).
     """
 
-    name: str
+    name: str  # Simple name (for backward compat and display)
+    type_ref: FlowTypeRefNode | None = None  # Full type reference with optional namespace
     source: FlowEndpointNode | None = None
     target: FlowEndpointNode | None = None
     properties: list[PropertyNode] = Field(default_factory=list)
@@ -156,9 +178,13 @@ class SystemNode(ASTNode):
 
 
 class SCDFlowNode(ASTNode):
-    """A data flow in an SCD with direction."""
+    """A data flow in an SCD with direction.
 
-    name: str
+    The type_ref contains the flow type, which may be qualified (Namespace.TypeName).
+    """
+
+    name: str  # Simple name (for backward compat and display)
+    type_ref: FlowTypeRefNode | None = None  # Full type reference with optional namespace
     source: str
     target: str
     direction: Literal["inbound", "outbound", "bidirectional"]
@@ -295,11 +321,32 @@ class FieldConstraintNode(ASTNode):
     value: str | int | float | None = None
 
 
+class DataDictTypeRefNode(ASTNode):
+    """A type reference in data dictionary, optionally qualified with namespace.
+
+    Used in struct fields, union alternatives, and array element types.
+
+    Examples:
+    - Simple: "Address" -> namespace=None, name="Address"
+    - Qualified: "ServiceA.Request" -> namespace="ServiceA", name="Request"
+    """
+
+    namespace: str | None = None
+    name: str
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the fully qualified name."""
+        if self.namespace:
+            return f"{self.namespace}.{self.name}"
+        return self.name
+
+
 class StructFieldNode(ASTNode):
     """A field in a struct definition."""
 
     name: str
-    type_name: str
+    type_ref: DataDictTypeRefNode
     constraints: list[FieldConstraintNode] = Field(default_factory=list)
 
 
@@ -310,21 +357,27 @@ class StructDefNode(ASTNode):
 
 
 class UnionDefNode(ASTNode):
-    """A union type definition (alternatives)."""
+    """A union type definition (alternatives).
 
-    alternatives: list[str] = Field(default_factory=list)
+    Alternatives can be string literals, base types, or type references.
+    """
+
+    alternatives: list[str | DataDictTypeRefNode] = Field(default_factory=list)
 
 
 class ArrayDefNode(ASTNode):
     """An array type definition."""
 
-    element_type: str
+    element_type: DataDictTypeRefNode
     min_length: int | None = None
     max_length: int | None = None
 
 
-class TypeRefNode(ASTNode):
-    """A reference to another type."""
+class SimpleTypeRefNode(ASTNode):
+    """A simple reference to another type (base type or identifier).
+
+    Used for top-level data definitions like: TypeName = OtherType
+    """
 
     name: str
 
@@ -333,12 +386,17 @@ class DataDefNode(ASTNode):
     """A data definition in the data dictionary."""
 
     name: str
-    definition: StructDefNode | UnionDefNode | ArrayDefNode | TypeRefNode | PlaceholderNode
+    definition: StructDefNode | UnionDefNode | ArrayDefNode | SimpleTypeRefNode | PlaceholderNode
 
 
 class DataDictNode(ASTNode):
-    """A Data Dictionary declaration."""
+    """A Data Dictionary declaration.
 
+    If namespace is None, this is an anonymous datadict and types are global.
+    If namespace is set, types must be qualified as Namespace.TypeName in flows.
+    """
+
+    namespace: str | None = None
     definitions: list[DataDefNode] = Field(default_factory=list)
 
 

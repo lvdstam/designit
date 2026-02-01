@@ -42,6 +42,26 @@ class RefinesRef(BaseModel):
     line: int | None = None
 
 
+class FlowTypeRef(BaseModel):
+    """A reference to a type in the data dictionary.
+
+    If namespace is None, refers to an anonymous datadict type.
+    If namespace is set, refers to a namespaced type (Namespace.TypeName).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    namespace: str | None = None
+    name: str
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the fully qualified type name."""
+        if self.namespace:
+            return f"{self.namespace}.{self.name}"
+        return self.name
+
+
 class DataFlow(BaseModel):
     """A data flow between DFD elements.
 
@@ -49,6 +69,9 @@ class DataFlow(BaseModel):
     For boundary flows:
       - Inbound: source is None, target is set
       - Outbound: source is set, target is None
+
+    The type_ref field optionally specifies the data type being transferred,
+    which may be a qualified reference to a namespaced datadict type.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -57,6 +80,7 @@ class DataFlow(BaseModel):
     source: ElementReference | None = None
     target: ElementReference | None = None
     flow_type: FlowType = "internal"
+    type_ref: FlowTypeRef | None = None
     description: str | None = None
     source_file: str | None = None
     line: int | None = None

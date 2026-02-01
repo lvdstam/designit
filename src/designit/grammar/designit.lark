@@ -32,7 +32,8 @@ scd_external_decl: EXTERNAL IDENTIFIER block
 
 scd_datastore_decl: DATASTORE IDENTIFIER block
 
-scd_flow_decl: FLOW IDENTIFIER ":" scd_flow_endpoint scd_flow_arrow scd_flow_endpoint properties?
+// Flow type can be simple (TypeName) or qualified (Namespace.TypeName)
+scd_flow_decl: FLOW flow_type_ref ":" scd_flow_endpoint scd_flow_arrow scd_flow_endpoint properties?
 
 scd_flow_endpoint: IDENTIFIER
 
@@ -64,9 +65,10 @@ datastore_decl: DATASTORE IDENTIFIER block
 // - Internal flows: flow Name: Source -> Target
 // - Boundary inbound: flow Name: -> Target
 // - Boundary outbound: flow Name: Source ->
-flow_decl: FLOW IDENTIFIER ":" flow_endpoint "->" flow_endpoint properties?   -> internal_flow_decl
-         | FLOW IDENTIFIER ":" "->" flow_endpoint properties?                 -> inbound_flow_decl
-         | FLOW IDENTIFIER ":" flow_endpoint "->" properties?                 -> outbound_flow_decl
+// Flow type can be simple (TypeName) or qualified (Namespace.TypeName)
+flow_decl: FLOW flow_type_ref ":" flow_endpoint "->" flow_endpoint properties?   -> internal_flow_decl
+         | FLOW flow_type_ref ":" "->" flow_endpoint properties?                 -> inbound_flow_decl
+         | FLOW flow_type_ref ":" flow_endpoint "->" properties?                 -> outbound_flow_decl
 
 flow_endpoint: IDENTIFIER ("." IDENTIFIER)?
 
@@ -136,7 +138,8 @@ control_couple_decl: CONTROL_COUPLE ":" IDENTIFIER
 // ============================================
 // Data Dictionary
 // ============================================
-datadict_decl: DATADICT "{" _NL* datadict_body* "}"
+// Datadict can be anonymous (existing) or named (namespace)
+datadict_decl: DATADICT IDENTIFIER? "{" _NL* datadict_body* "}"
 
 datadict_body: datadef_decl _NL*
 
@@ -152,10 +155,11 @@ simple_type_ref: base_type
                | IDENTIFIER
 
 // Union must start with a string OR an identifier/type, followed by | alternatives
+// Type references can be simple (TypeName) or qualified (Namespace.TypeName)
 union_def: union_first ("|" union_alt)+
 
-union_first: STRING | base_type | IDENTIFIER
-union_alt: STRING | base_type | IDENTIFIER
+union_first: STRING | base_type | qualified_type_ref | IDENTIFIER
+union_alt: STRING | base_type | qualified_type_ref | IDENTIFIER
 
 struct_def: "{" _NL* struct_field* "}"
 
@@ -170,7 +174,8 @@ field_constraint: PATTERN ":" STRING   -> pattern_constraint
 
 array_def: array_element_type "[" "]" array_constraints?
 
-array_element_type: base_type | IDENTIFIER
+// Array element type can be simple (TypeName) or qualified (Namespace.TypeName)
+array_element_type: base_type | qualified_type_ref | IDENTIFIER
 
 array_constraints: "[" array_constraint ("," array_constraint)* "]"
 
@@ -180,6 +185,10 @@ array_constraint: MIN ":" NUMBER    -> array_min_constraint
 // ============================================
 // Common elements
 // ============================================
+
+// Flow type reference - can be simple (TypeName) or qualified (Namespace.TypeName)
+flow_type_ref: IDENTIFIER ("." IDENTIFIER)?
+
 block: "{" _NL* block_body* "}"
      | placeholder
 
@@ -198,9 +207,14 @@ value_list: property_value ("," property_value)*
 
 properties: "{" _NL* (property_decl _NL*)* "}"
 
-// Type expressions
+// Type expressions for struct fields and attributes
+// Can be simple (TypeName) or qualified (Namespace.TypeName)
 type_expr: base_type
+         | qualified_type_ref
          | IDENTIFIER
+
+// Qualified type reference for use in struct fields, unions, arrays
+qualified_type_ref: IDENTIFIER "." IDENTIFIER
 
 base_type: STRING_TYPE -> string_type
          | INTEGER_TYPE -> integer_type

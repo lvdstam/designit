@@ -271,6 +271,72 @@ datadict {
 
 ---
 
+#### REQ-GRAM-051: Named Data Dictionary [TODO]
+The DSL shall support optional names for datadict blocks that serve as namespaces.
+
+**Acceptance Criteria:**
+- Anonymous syntax (existing): `datadict { ... }`
+- Named syntax (new): `datadict NamespaceName { ... }`
+- Namespace name follows identifier rules
+- Multiple datadict blocks with the same name are merged
+- Multiple anonymous datadict blocks are merged
+
+**Example:**
+```
+// Anonymous datadict - types usable without qualification
+datadict {
+    Money = { amount: decimal, currency: string }
+}
+
+// Named datadict - types must be qualified as PaymentGateway.X
+datadict PaymentGateway {
+    GetStatusRequest = { transaction_id: string }
+    GetStatusResponse = { status: string, amount: Money }
+}
+
+// Same namespace in another block (merged)
+datadict PaymentGateway {
+    RefundRequest = { transaction_id: string, reason: string }
+}
+```
+
+**Implementation:**
+- Grammar: `src/designit/grammar/designit.lark` (datadict_decl with optional IDENTIFIER)
+- AST: `src/designit/parser/ast_nodes.py` (DataDictNode.namespace)
+- Parser: `src/designit/parser/parser.py` (datadict_decl transformer)
+
+---
+
+#### REQ-GRAM-052: Qualified Type References in Flows [TODO]
+Flow declarations shall support qualified type references using dot notation.
+
+**Acceptance Criteria:**
+- Unqualified syntax (existing): `flow TypeName: Source -> Target`
+- Qualified syntax (new): `flow Namespace.TypeName: Source -> Target`
+- Applies to SCD flows and DFD flows (all variants: internal, inbound, outbound)
+
+**Example:**
+```
+scd BankingContext {
+    system BankingSystem { ... }
+    external PaymentGw { ... }
+    
+    // Unqualified - references anonymous datadict type
+    flow Money: BankingSystem -> SomeProcess
+    
+    // Qualified - references namespaced type
+    flow PaymentGateway.GetStatusRequest: BankingSystem -> PaymentGw
+    flow PaymentGateway.GetStatusResponse: PaymentGw -> BankingSystem
+}
+```
+
+**Implementation:**
+- Grammar: `src/designit/grammar/designit.lark` (flow_type_ref rule)
+- AST: `src/designit/parser/ast_nodes.py` (FlowTypeRef model)
+- Parser: `src/designit/parser/parser.py` (flow declaration transformers)
+
+---
+
 ### 1.3 Data Types & Constraints
 
 #### REQ-GRAM-100: Built-in Data Types [DONE]
@@ -586,6 +652,153 @@ DFD flow data dictionary validation shall use ERROR severity.
 - Consistent with SCD flow validation (REQ-SEM-061)
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
+
+---
+
+#### REQ-SEM-063: Namespaced Type Qualification Requirement [TODO]
+Types defined in named datadicts shall always require qualification when referenced in flows.
+
+**Acceptance Criteria:**
+- ERROR if unqualified name references a type that exists only in named datadict(s)
+- Error message suggests the qualified name(s): `"Flow 'X' must be qualified. Did you mean: Namespace.X?"`
+- Unqualified references to anonymous datadict types remain valid
+- Qualified references to namespaced types are valid
+
+**Example:**
+```
+datadict PaymentGateway {
+    Request = { id: string }
+}
+
+// ERROR: "Flow 'Request' must be qualified. Did you mean: PaymentGateway.Request?"
+flow Request: System -> Gateway
+
+// OK
+flow PaymentGateway.Request: System -> Gateway
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
+
+---
+
+#### REQ-SEM-064: Cross-Namespace Reference Restriction [TODO]
+Types in named datadicts shall only reference types from the same namespace or from anonymous datadicts.
+
+**Acceptance Criteria:**
+- OK if a namespaced type references another type in the same namespace
+- OK if a namespaced type references an anonymous type
+- OK if a namespaced type references built-in types
+- ERROR if a namespaced type references a type from a different namespace
+
+**Example:**
+```
+datadict {
+    Money = { amount: decimal, currency: string }  // Anonymous
+}
+
+datadict PaymentGateway {
+    Request = { 
+        amount: Money       // OK: references anonymous type
+        status: string      // OK: built-in type
+    }
+    
+    ExtendedRequest = {
+        base: Request       // OK: references same namespace
+        extra: string
+    }
+}
+
+datadict OrderService {
+    Request = {
+        payment: PaymentGateway.Request  // ERROR: cannot reference different namespace
+    }
+}
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_datadict()`
+
+---
+
+#### REQ-SEM-065: Datadict Namespace Merging [TODO]
+Multiple datadict blocks with the same name (or multiple anonymous blocks) shall be merged.
+
+**Acceptance Criteria:**
+- Definitions from all blocks with same namespace are combined
+- ERROR if duplicate type name within same namespace (across blocks)
+- Merging works across imported files
+- Order of definition does not matter
+
+**Example:**
+```
+datadict PaymentGateway {
+    Request = { id: string }
+}
+
+datadict PaymentGateway {
+    Response = { status: string }  // OK: merged with above
+    Request = { ... }              // ERROR: duplicate in namespace
+}
+```
+
+**Implementation:**
+- `src/designit/semantic/analyzer.py`
+- `src/designit/semantic/resolver.py`
+
+---
+
+#### REQ-SEM-066: Namespace Shadowing Warning [DONE]
+When a datadict namespace name matches a global (anonymous) type name, a WARNING shall be emitted.
+
+**Acceptance Criteria:**
+- WARNING when namespace name equals a global type name
+- Message includes both the namespace name and the conflicting global type's location
+- Does not prevent compilation, only warns about potential ambiguity
+
+**Example:**
+```
+datadict {
+    Request = { id: string }      // Global type "Request"
+}
+
+datadict Request {                // WARNING: shadows global type
+    Payload = { data: string }
+}
+```
+
+**Warning message:**
+`Namespace 'Request' shadows global type 'Request' (defined at file.dit:3). Use qualified references to avoid ambiguity.`
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_namespace_shadowing()`
+
+---
+
+#### REQ-SEM-067: Type Resolution with Namespace-First Lookup [DONE]
+When resolving type references within namespaced datadicts, the same namespace shall be searched first before falling back to global types.
+
+**Acceptance Criteria:**
+- For simple type reference `X` within namespace `N`:
+  1. First look for `N.X` (same namespace)
+  2. Then look for `X` (global/anonymous type)
+- For qualified type reference `A.B`:
+  - Always resolve to `A.B` exactly (no fallback)
+- If not found: ERROR for undefined type
+
+**Example:**
+```
+datadict {
+    Common = { id: string }
+}
+
+datadict ServiceA {
+    Request = { data: string }
+    Response = {
+        req: Request     // Resolves to ServiceA.Request (same namespace first)
+        common: Common   // Resolves to global Common (not in ServiceA)
+    }
+}
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._resolve_type_ref()`
 
 ---
 

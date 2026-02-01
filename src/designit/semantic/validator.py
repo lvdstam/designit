@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from designit.model.base import (
     DesignDocument,
     ValidationMessage,
     ValidationSeverity,
 )
+
+if TYPE_CHECKING:
+    from designit.model.datadict import DataDefinition, TypeRef
 
 
 class Validator:
@@ -488,7 +493,13 @@ class Validator:
                     )
 
     def _validate_datadict(self, doc: DesignDocument) -> None:
-        """Validate the data dictionary."""
+        """Validate the data dictionary.
+
+        This validates:
+        - Type references exist
+        - REQ-SEM-064: Cross-namespace reference restriction
+        - REQ-SEM-066: Namespace shadowing warning
+        """
         if not doc.data_dictionary:
             return
 
@@ -504,51 +515,237 @@ class Validator:
             "binary",
         }
 
+        # REQ-SEM-066: Check for namespace names that shadow global type names
+        self._validate_namespace_shadowing(doc)
+
+        # Build a map of simple names to their namespaces for cross-reference checking
+        type_namespaces: dict[str, str | None] = {}  # simple_name -> namespace (None = anonymous)
+        for qualified_name, defn in dd.definitions.items():
+            type_namespaces[qualified_name] = defn.namespace
+
         for def_name, defn in dd.definitions.items():
             if defn.is_placeholder:
                 continue
 
-            # Check type references
+            # Check type references with namespace-first resolution
             referenced = dd.get_all_referenced_types(def_name)
-            for ref_type in referenced:
-                if ref_type not in dd.definitions and ref_type not in builtin_types:
-                    # Check if it's a string literal (for unions)
-                    if not (ref_type.startswith('"') or ref_type.startswith("'")):
+            for type_ref in referenced:
+                # Resolve the type reference using namespace-first lookup
+                resolved_name = self._resolve_type_ref(type_ref, defn.namespace, dd.definitions)
+
+                if resolved_name is None and type_ref.name not in builtin_types:
+                    # Check if it's a string literal (for unions) - these are preserved as strings
+                    if not (type_ref.name.startswith('"') or type_ref.name.startswith("'")):
                         self._warning(
-                            f"Type '{def_name}' references undefined type '{ref_type}'",
+                            f"Type '{def_name}' references undefined type "
+                            f"'{type_ref.qualified_name}'",
                             def_name,
                             defn.source_file,
                             defn.line,
                         )
+                    continue
+
+                # REQ-SEM-064: Cross-namespace reference restriction
+                # Types in named datadict can only reference same namespace or anonymous types
+                if defn.namespace and resolved_name:
+                    if type_ref.is_qualified:
+                        # Qualified reference like ServiceA.Type - check if it's a different namespace
+                        if type_ref.namespace != defn.namespace:
+                            self._error(
+                                f"Type '{def_name}' in namespace '{defn.namespace}' "
+                                f"cannot reference type '{type_ref.qualified_name}' from "
+                                f"different namespace '{type_ref.namespace}'. Types can only "
+                                f"reference same namespace or anonymous types.",
+                                def_name,
+                                defn.source_file,
+                                defn.line,
+                            )
+                    else:
+                        # Simple reference - resolved via namespace-first lookup
+                        # Check if it resolved to a different namespace
+                        if resolved_name in dd.definitions:
+                            ref_defn = dd.definitions[resolved_name]
+                            if (
+                                ref_defn.namespace is not None
+                                and ref_defn.namespace != defn.namespace
+                            ):
+                                self._error(
+                                    f"Type '{def_name}' in namespace '{defn.namespace}' "
+                                    f"cannot reference type '{resolved_name}' from different "
+                                    f"namespace '{ref_defn.namespace}'. Types can only "
+                                    f"reference same namespace or anonymous types.",
+                                    def_name,
+                                    defn.source_file,
+                                    defn.line,
+                                )
+
+    def _resolve_type_ref(
+        self,
+        type_ref: "TypeRef",
+        current_namespace: str | None,
+        definitions: dict[str, "DataDefinition"],
+    ) -> str | None:
+        """Resolve a type reference to its qualified name, or None if not found.
+
+        Resolution rules:
+        1. If qualified (Namespace.Type): look for exact match
+        2. If simple (Type) in a namespace: try same namespace first, then global
+        3. If simple (Type) in anonymous: try global only
+
+        Args:
+            type_ref: The type reference to resolve.
+            current_namespace: The namespace of the type containing this reference.
+            definitions: All type definitions in the data dictionary.
+
+        Returns:
+            The qualified name of the resolved type, or None if not found.
+        """
+        from designit.model.datadict import TypeRef  # Import here to avoid circular import
+
+        if type_ref.is_qualified:
+            # Qualified reference: look for exact match
+            qualified = type_ref.qualified_name
+            return qualified if qualified in definitions else None
+
+        # Simple reference
+        if current_namespace:
+            # First: try same namespace
+            namespaced = f"{current_namespace}.{type_ref.name}"
+            if namespaced in definitions:
+                return namespaced
+
+        # Second: try global (anonymous namespace)
+        if type_ref.name in definitions:
+            defn = definitions[type_ref.name]
+            if defn.namespace is None:  # Must be global (anonymous)
+                return type_ref.name
+
+        return None
+
+    def _validate_namespace_shadowing(self, doc: DesignDocument) -> None:
+        """Warn when namespace names shadow global type names (REQ-SEM-066).
+
+        When a datadict namespace name matches a global (anonymous) type name,
+        this can cause confusion. Emit a warning with both the namespace and
+        the conflicting global type's qualified name.
+        """
+        if not doc.data_dictionary:
+            return
+
+        dd = doc.data_dictionary
+
+        # Collect global (anonymous) type names
+        global_types: dict[str, "DataDefinition"] = {}
+        for name, defn in dd.definitions.items():
+            if defn.namespace is None:
+                global_types[name] = defn
+
+        # Collect all namespace names and find one type per namespace for location info
+        namespace_info: dict[str, "DataDefinition"] = {}  # namespace -> first definition in it
+        for defn in dd.definitions.values():
+            if defn.namespace and defn.namespace not in namespace_info:
+                namespace_info[defn.namespace] = defn
+
+        # Check for shadowing
+        for namespace, ns_defn in namespace_info.items():
+            if namespace in global_types:
+                global_defn = global_types[namespace]
+                self._warning(
+                    f"Namespace '{namespace}' shadows global type '{namespace}' "
+                    f"(defined at {global_defn.source_file or 'unknown'}:"
+                    f"{global_defn.line or '?'}). "
+                    f"Use qualified references to avoid ambiguity.",
+                    namespace,
+                    ns_defn.source_file,
+                    ns_defn.line,
+                )
 
     def _validate_cross_references(self, doc: DesignDocument) -> None:
-        """Validate cross-references between different diagram types."""
+        """Validate cross-references between different diagram types.
+
+        This validates:
+        - REQ-SEM-061: SCD flow types must be in data dictionary
+        - REQ-SEM-062: DFD flow types must be in data dictionary
+        - REQ-SEM-063: Namespaced types must be qualified in flows
+        """
         # Collect all data types from data dictionary
         data_types: set[str] = set()
+        namespaced_simple_names: dict[str, list[str]] = {}  # simple_name -> [qualified_names]
+
         if doc.data_dictionary:
             data_types = set(doc.data_dictionary.definitions.keys())
+            # Build a map of simple names to their namespaced qualified names
+            for qualified_name, defn in doc.data_dictionary.definitions.items():
+                if defn.namespace:  # Only track namespaced types
+                    if defn.name not in namespaced_simple_names:
+                        namespaced_simple_names[defn.name] = []
+                    namespaced_simple_names[defn.name].append(qualified_name)
 
-        # Check DFD flow types against data dictionary (REQ-SEM-062)
+        # Check DFD flow types against data dictionary (REQ-SEM-062, REQ-SEM-063)
         for dfd_name, dfd in doc.dfds.items():
             for flow in dfd.flows.values():
-                if flow.name not in data_types:
-                    self._error(
-                        f"Flow '{flow.name}' in DFD '{dfd_name}' is not defined in data dictionary",
-                        flow.name,
-                        flow.source_file,
-                        flow.line,
-                    )
+                # Determine the type name to check
+                if flow.type_ref:
+                    # Flow has explicit type reference
+                    type_name = flow.type_ref.qualified_name
+                else:
+                    # Use flow name as type name (backward compatibility)
+                    type_name = flow.name
 
-        # Check SCD flow types against data dictionary (REQ-SEM-061)
+                if type_name not in data_types:
+                    # Check if it's an unqualified reference to a namespaced type
+                    if type_name in namespaced_simple_names:
+                        qualified_options = namespaced_simple_names[type_name]
+                        opts = ", ".join(qualified_options)
+                        self._error(
+                            f"Flow '{flow.name}' in DFD '{dfd_name}' uses unqualified "
+                            f"type '{type_name}' which exists in namespace(s): {opts}. "
+                            f"Use qualified name instead.",
+                            flow.name,
+                            flow.source_file,
+                            flow.line,
+                        )
+                    else:
+                        self._error(
+                            f"Flow '{flow.name}' in DFD '{dfd_name}' is not defined "
+                            f"in data dictionary",
+                            flow.name,
+                            flow.source_file,
+                            flow.line,
+                        )
+
+        # Check SCD flow types against data dictionary (REQ-SEM-061, REQ-SEM-063)
         for scd_name, scd in doc.scds.items():
             for flow in scd.flows.values():
-                if flow.name not in data_types:
-                    self._error(
-                        f"Flow '{flow.name}' in SCD '{scd_name}' is not defined in data dictionary",
-                        flow.name,
-                        flow.source_file,
-                        flow.line,
-                    )
+                # Determine the type name to check
+                if flow.type_ref:
+                    # Flow has explicit type reference
+                    type_name = flow.type_ref.qualified_name
+                else:
+                    # Use flow name as type name (backward compatibility)
+                    type_name = flow.name
+
+                if type_name not in data_types:
+                    # Check if it's an unqualified reference to a namespaced type
+                    if type_name in namespaced_simple_names:
+                        qualified_options = namespaced_simple_names[type_name]
+                        opts = ", ".join(qualified_options)
+                        self._error(
+                            f"Flow '{flow.name}' in SCD '{scd_name}' uses unqualified "
+                            f"type '{type_name}' which exists in namespace(s): {opts}. "
+                            f"Use qualified name instead.",
+                            flow.name,
+                            flow.source_file,
+                            flow.line,
+                        )
+                    else:
+                        self._error(
+                            f"Flow '{flow.name}' in SCD '{scd_name}' is not defined "
+                            f"in data dictionary",
+                            flow.name,
+                            flow.source_file,
+                            flow.line,
+                        )
 
     def _validate_unique_names(self, doc: DesignDocument) -> None:
         """Validate no duplicate element names across the document.

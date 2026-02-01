@@ -17,6 +17,7 @@ from designit.parser.ast_nodes import (
     ConstraintNode,
     DataDefNode,
     DataDictNode,
+    DataDictTypeRefNode,
     DatastoreNode,
     DFDNode,
     DocumentNode,
@@ -26,6 +27,7 @@ from designit.parser.ast_nodes import (
     FieldConstraintNode,
     FlowEndpointNode,
     FlowNode,
+    FlowTypeRefNode,
     ImportNode,
     ModuleNode,
     PlaceholderNode,
@@ -35,6 +37,7 @@ from designit.parser.ast_nodes import (
     RelationshipNode,
     SCDFlowNode,
     SCDNode,
+    SimpleTypeRefNode,
     SourceLocation,
     StateNode,
     STDNode,
@@ -43,7 +46,6 @@ from designit.parser.ast_nodes import (
     StructureNode,
     SystemNode,
     TransitionNode,
-    TypeRefNode,
     UnionDefNode,
 )
 
@@ -281,6 +283,17 @@ class DesignItTransformer(Transformer[Token, Any]):
             placeholder=placeholder,
         )
 
+    def flow_type_ref(self, items: list[Any]) -> FlowTypeRefNode:
+        """Handle flow type reference: TypeName or Namespace.TypeName."""
+        if len(items) == 1:
+            return FlowTypeRefNode(namespace=None, name=items[0])
+        else:
+            return FlowTypeRefNode(namespace=items[0], name=items[1])
+
+    def qualified_type_ref(self, items: list[Any]) -> DataDictTypeRefNode:
+        """Handle qualified type reference in struct fields/unions/arrays: Namespace.TypeName."""
+        return DataDictTypeRefNode(namespace=items[0], name=items[1])
+
     # ============================================
     # Type expressions
     # ============================================
@@ -312,8 +325,13 @@ class DesignItTransformer(Transformer[Token, Any]):
     def base_type(self, items: list[Any]) -> str:
         return items[0]
 
-    def type_expr(self, items: list[Any]) -> str:
-        return items[0] if items else "unknown"
+    def type_expr(self, items: list[Any]) -> DataDictTypeRefNode:
+        """Handle type expression: can be base_type, qualified_type_ref, or IDENTIFIER."""
+        item = items[0] if items else "unknown"
+        if isinstance(item, DataDictTypeRefNode):
+            return item
+        # Simple identifier or base type
+        return DataDictTypeRefNode(namespace=None, name=item)
 
     # ============================================
     # Import
@@ -365,13 +383,14 @@ class DesignItTransformer(Transformer[Token, Any]):
     @v_args(meta=True)
     def internal_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
         """Handle internal flow: flow Name: Source -> Target."""
-        # items: [FLOW, IDENTIFIER, flow_endpoint, flow_endpoint, properties?]
-        name = items[1]
+        # items: [FLOW, FlowTypeRefNode, flow_endpoint, flow_endpoint, properties?]
+        type_ref = items[1]
         source = items[2]
         target = items[3]
         properties = items[4] if len(items) > 4 else []
         return FlowNode(
-            name=name,
+            name=type_ref.name,
+            type_ref=type_ref,
             source=source,
             target=target,
             properties=properties,
@@ -381,12 +400,13 @@ class DesignItTransformer(Transformer[Token, Any]):
     @v_args(meta=True)
     def inbound_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
         """Handle boundary inbound flow: flow Name: -> Target."""
-        # items: [FLOW, IDENTIFIER, flow_endpoint, properties?]
-        name = items[1]
+        # items: [FLOW, FlowTypeRefNode, flow_endpoint, properties?]
+        type_ref = items[1]
         target = items[2]
         properties = items[3] if len(items) > 3 else []
         return FlowNode(
-            name=name,
+            name=type_ref.name,
+            type_ref=type_ref,
             source=None,
             target=target,
             properties=properties,
@@ -396,12 +416,13 @@ class DesignItTransformer(Transformer[Token, Any]):
     @v_args(meta=True)
     def outbound_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
         """Handle boundary outbound flow: flow Name: Source ->."""
-        # items: [FLOW, IDENTIFIER, flow_endpoint, properties?]
-        name = items[1]
+        # items: [FLOW, FlowTypeRefNode, flow_endpoint, properties?]
+        type_ref = items[1]
         source = items[2]
         properties = items[3] if len(items) > 3 else []
         return FlowNode(
-            name=name,
+            name=type_ref.name,
+            type_ref=type_ref,
             source=source,
             target=None,
             properties=properties,
@@ -481,8 +502,8 @@ class DesignItTransformer(Transformer[Token, Any]):
 
     @v_args(meta=True)
     def scd_flow_decl(self, meta: Any, items: list[Any]) -> SCDFlowNode:
-        # items: [FLOW, IDENTIFIER, source, arrow_direction, target, properties?]
-        name = items[1]
+        # items: [FLOW, FlowTypeRefNode, source, arrow_direction, target, properties?]
+        type_ref = items[1]
         source = items[2]
         arrow = items[3]  # "outbound" or "bidirectional"
         target = items[4]
@@ -497,7 +518,8 @@ class DesignItTransformer(Transformer[Token, Any]):
         )
 
         return SCDFlowNode(
-            name=name,
+            name=type_ref.name,
+            type_ref=type_ref,
             source=source,
             target=target,
             direction=direction,
@@ -568,7 +590,13 @@ class DesignItTransformer(Transformer[Token, Any]):
 
     def attribute_decl(self, items: list[Any]) -> AttributeNode:
         name = items[0]
-        type_name = items[1]
+        type_ref = items[1]
+        # type_ref is now a DataDictTypeRefNode, extract the name for ERD attributes
+        # ERD attributes use simple type names, not qualified refs
+        if isinstance(type_ref, DataDictTypeRefNode):
+            type_name = type_ref.qualified_name
+        else:
+            type_name = type_ref
         constraints = items[2] if len(items) > 2 else []
         return AttributeNode(name=name, type_name=type_name, constraints=constraints)
 
@@ -788,7 +816,7 @@ class DesignItTransformer(Transformer[Token, Any]):
 
     def struct_field(self, items: list[Any]) -> StructFieldNode:
         name = items[0]
-        type_name = items[1]
+        type_ref = items[1]  # Now a DataDictTypeRefNode from type_expr
         constraints = items[2] if len(items) > 2 else []
         # Handle case where constraint is a ConstraintNode (from pattern_constraint)
         field_constraints = []
@@ -799,26 +827,35 @@ class DesignItTransformer(Transformer[Token, Any]):
                 )
             else:
                 field_constraints.append(c)
-        return StructFieldNode(name=name, type_name=type_name, constraints=field_constraints)
+        return StructFieldNode(name=name, type_ref=type_ref, constraints=field_constraints)
 
     def struct_def(self, items: list[Any]) -> StructDefNode:
         fields = [item for item in items if isinstance(item, StructFieldNode)]
         return StructDefNode(fields=fields)
 
-    def union_first(self, items: list[Any]) -> str:
-        return items[0] if items else ""
+    def union_first(self, items: list[Any]) -> str | DataDictTypeRefNode:
+        """Handle first alternative in union: can be string literal, base type, or type ref."""
+        item = items[0] if items else ""
+        return item
 
-    def union_alt(self, items: list[Any]) -> str:
-        return items[0] if items else ""
+    def union_alt(self, items: list[Any]) -> str | DataDictTypeRefNode:
+        """Handle subsequent alternatives in union: can be string literal, base type, or type ref."""
+        item = items[0] if items else ""
+        return item
 
     def union_def(self, items: list[Any]) -> UnionDefNode:
         return UnionDefNode(alternatives=list(items))
 
-    def array_element_type(self, items: list[Any]) -> str:
-        return items[0] if items else "unknown"
+    def array_element_type(self, items: list[Any]) -> DataDictTypeRefNode:
+        """Handle array element type: can be base_type, qualified_type_ref, or IDENTIFIER."""
+        item = items[0] if items else "unknown"
+        if isinstance(item, DataDictTypeRefNode):
+            return item
+        # Simple identifier or base type
+        return DataDictTypeRefNode(namespace=None, name=item)
 
     def array_def(self, items: list[Any]) -> ArrayDefNode:
-        element_type = items[0]
+        element_type = items[0]  # Now a DataDictTypeRefNode
         min_length = None
         max_length = None
 
@@ -834,10 +871,10 @@ class DesignItTransformer(Transformer[Token, Any]):
     def array_constraints(self, items: list[Any]) -> list[tuple[str, int]]:
         return list(items)
 
-    def simple_type_ref(self, items: list[Any]) -> TypeRefNode:
+    def simple_type_ref(self, items: list[Any]) -> SimpleTypeRefNode:
         # Can be a base type name or identifier
         name = items[0] if items else "unknown"
-        return TypeRefNode(name=name)
+        return SimpleTypeRefNode(name=name)
 
     def data_definition(self, items: list[Any]) -> Any:
         return items[0] if items else PlaceholderNode()
@@ -852,8 +889,17 @@ class DesignItTransformer(Transformer[Token, Any]):
         return items[0]
 
     def datadict_decl(self, items: list[Any]) -> DataDictNode:
-        definitions = [item for item in items if isinstance(item, DataDefNode)]
-        return DataDictNode(definitions=definitions)
+        # items: [DATADICT, IDENTIFIER?, ...definitions]
+        # If there's a namespace, it comes after DATADICT keyword
+        namespace = None
+        definitions = []
+        for item in items:
+            if isinstance(item, DataDefNode):
+                definitions.append(item)
+            elif isinstance(item, str) and item != "datadict":
+                # This is the optional namespace identifier
+                namespace = item
+        return DataDictNode(namespace=namespace, definitions=definitions)
 
     # ============================================
     # Document

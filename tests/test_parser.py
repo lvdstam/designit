@@ -1004,3 +1004,436 @@ class TestDFDLocalDatastore:
         assert read_flow is not None
         assert read_flow.source is not None
         assert read_flow.target is not None
+
+
+class TestNamedDataDictParsing:
+    """Tests for named/namespaced datadict parsing.
+
+    REQ-GRAM-051: Data dictionaries support optional namespace identifier.
+    REQ-GRAM-052: Flow type references support namespace qualification.
+    """
+
+    def test_anonymous_datadict_parses(self) -> None:
+        """Anonymous datadict (no namespace) should parse."""
+        source = """
+        datadict {
+            Money = {
+                amount: decimal
+                currency: string
+            }
+            Status = "pending" | "complete"
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.datadicts) == 1
+        dd = doc.datadicts[0]
+        assert dd.namespace is None
+        assert len(dd.definitions) == 2
+
+    def test_named_datadict_parses(self) -> None:
+        """Named datadict with namespace identifier should parse."""
+        source = """
+        datadict PaymentGateway {
+            GetStatusRequest = {
+                transaction_id: string
+            }
+            GetStatusResponse = {
+                status: string
+                amount: decimal
+            }
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.datadicts) == 1
+        dd = doc.datadicts[0]
+        assert dd.namespace == "PaymentGateway"
+        assert len(dd.definitions) == 2
+
+    def test_multiple_datadicts_with_different_namespaces(self) -> None:
+        """Multiple datadicts with different namespaces should parse."""
+        source = """
+        datadict {
+            SharedType = { id: string }
+        }
+
+        datadict PaymentGateway {
+            Request = { amount: decimal }
+        }
+
+        datadict ShippingService {
+            Request = { address: string }
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.datadicts) == 3
+
+        anon = doc.datadicts[0]
+        assert anon.namespace is None
+
+        pg = doc.datadicts[1]
+        assert pg.namespace == "PaymentGateway"
+
+        ss = doc.datadicts[2]
+        assert ss.namespace == "ShippingService"
+
+    def test_qualified_flow_type_ref_in_scd(self) -> None:
+        """SCD flows should support qualified type references."""
+        source = """
+        datadict PaymentGateway {
+            PaymentRequest = { amount: decimal }
+        }
+
+        scd TestContext {
+            system BankingSystem {}
+            external PaymentGw {}
+            flow PaymentGateway.PaymentRequest: BankingSystem -> PaymentGw
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.scds) == 1
+        scd = doc.scds[0]
+        assert len(scd.flows) == 1
+
+        flow = scd.flows[0]
+        # name is the simple name (last part) for display purposes
+        assert flow.name == "PaymentRequest"
+        # type_ref contains the full qualified reference
+        assert flow.type_ref is not None
+        assert flow.type_ref.namespace == "PaymentGateway"
+        assert flow.type_ref.name == "PaymentRequest"
+        assert flow.type_ref.qualified_name == "PaymentGateway.PaymentRequest"
+
+    def test_unqualified_flow_type_ref_in_scd(self) -> None:
+        """SCD flows with unqualified type ref should have no namespace."""
+        source = """
+        datadict {
+            SimpleRequest = { id: string }
+        }
+
+        scd TestContext {
+            system S {}
+            external E {}
+            flow SimpleRequest: E -> S
+        }
+        """
+        doc = parse_string(source)
+        flow = doc.scds[0].flows[0]
+        assert flow.name == "SimpleRequest"
+        assert flow.type_ref is not None
+        assert flow.type_ref.namespace is None
+        assert flow.type_ref.name == "SimpleRequest"
+        assert flow.type_ref.qualified_name == "SimpleRequest"
+
+    def test_qualified_flow_type_ref_in_dfd_inbound(self) -> None:
+        """DFD inbound boundary flows should support qualified type references."""
+        source = """
+        datadict PaymentGateway {
+            PaymentRequest = { amount: decimal }
+        }
+
+        scd Ctx {
+            system S {}
+            external E {}
+            flow PaymentGateway.PaymentRequest: E -> S
+        }
+
+        dfd Test {
+            refines: Ctx.S
+            process Handler {}
+            flow PaymentGateway.PaymentRequest: -> Handler
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        assert len(dfd.flows) == 1
+
+        flow = dfd.flows[0]
+        # name is the simple name
+        assert flow.name == "PaymentRequest"
+        # type_ref has the full reference
+        assert flow.type_ref is not None
+        assert flow.type_ref.namespace == "PaymentGateway"
+        assert flow.type_ref.name == "PaymentRequest"
+
+    def test_qualified_flow_type_ref_in_dfd_outbound(self) -> None:
+        """DFD outbound boundary flows should support qualified type references."""
+        source = """
+        datadict PaymentGateway {
+            PaymentResponse = { status: string }
+        }
+
+        scd Ctx {
+            system S {}
+            external E {}
+            flow PaymentGateway.PaymentResponse: S -> E
+        }
+
+        dfd Test {
+            refines: Ctx.S
+            process Handler {}
+            flow PaymentGateway.PaymentResponse: Handler ->
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        flow = dfd.flows[0]
+
+        assert flow.type_ref is not None
+        assert flow.type_ref.namespace == "PaymentGateway"
+        assert flow.type_ref.name == "PaymentResponse"
+
+    def test_qualified_flow_type_ref_in_dfd_internal(self) -> None:
+        """DFD internal flows should support qualified type references."""
+        source = """
+        datadict Internal {
+            ProcessedData = { result: string }
+        }
+
+        scd Ctx {
+            system S {}
+        }
+
+        dfd Test {
+            refines: Ctx.S
+            process A {}
+            process B {}
+            flow Internal.ProcessedData: A -> B
+        }
+        """
+        doc = parse_string(source)
+        dfd = doc.dfds[0]
+        flow = dfd.flows[0]
+
+        assert flow.type_ref is not None
+        assert flow.type_ref.namespace == "Internal"
+        assert flow.type_ref.name == "ProcessedData"
+
+    def test_bidirectional_scd_flow_with_qualified_type(self) -> None:
+        """SCD bidirectional flows should support qualified type references."""
+        source = """
+        datadict PaymentGateway {
+            PaymentExchange = { data: string }
+        }
+
+        scd TestContext {
+            system S {}
+            external E {}
+            flow PaymentGateway.PaymentExchange: S <-> E
+        }
+        """
+        doc = parse_string(source)
+        flow = doc.scds[0].flows[0]
+
+        assert flow.direction == "bidirectional"
+        assert flow.type_ref is not None
+        assert flow.type_ref.namespace == "PaymentGateway"
+        assert flow.type_ref.name == "PaymentExchange"
+
+    def test_named_datadict_node_has_namespace(self) -> None:
+        """DataDictNode should store the namespace."""
+        source = """
+        datadict MyNamespace {
+            Type1 = { field: string }
+        }
+        """
+        doc = parse_string(source)
+        dd = doc.datadicts[0]
+        assert dd.namespace == "MyNamespace"
+
+    def test_same_namespace_multiple_blocks(self) -> None:
+        """Multiple datadict blocks with same namespace should parse."""
+        source = """
+        datadict PaymentGateway {
+            Request1 = { data: string }
+        }
+
+        datadict PaymentGateway {
+            Request2 = { data: string }
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.datadicts) == 2
+        assert doc.datadicts[0].namespace == "PaymentGateway"
+        assert doc.datadicts[1].namespace == "PaymentGateway"
+
+
+class TestQualifiedTypeRefParsing:
+    """Tests for qualified type references in struct fields, unions, and arrays.
+
+    REQ-GRAM-051: Qualified type references (Namespace.TypeName) in data dictionary.
+    """
+
+    def test_qualified_type_ref_in_struct_field(self) -> None:
+        """Struct fields should support qualified type references."""
+        source = """
+        datadict ServiceA {
+            Response = { data: string }
+        }
+
+        datadict ServiceB {
+            Request = {
+                serviceA_response: ServiceA.Response
+                simple_field: string
+            }
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.datadicts) == 2
+
+        serviceB = doc.datadicts[1]
+        assert serviceB.namespace == "ServiceB"
+
+        request_def = serviceB.definitions[0]
+        assert request_def.name == "Request"
+
+        struct = request_def.definition
+        assert len(struct.fields) == 2
+
+        # Qualified type reference field
+        qualified_field = struct.fields[0]
+        assert qualified_field.name == "serviceA_response"
+        assert qualified_field.type_ref.namespace == "ServiceA"
+        assert qualified_field.type_ref.name == "Response"
+        assert qualified_field.type_ref.qualified_name == "ServiceA.Response"
+
+        # Simple type reference field
+        simple_field = struct.fields[1]
+        assert simple_field.name == "simple_field"
+        assert simple_field.type_ref.namespace is None
+        assert simple_field.type_ref.name == "string"
+
+    def test_simple_type_ref_in_struct_field(self) -> None:
+        """Struct fields should still support simple type references."""
+        source = """
+        datadict {
+            Address = { street: string }
+            Person = {
+                name: string
+                home: Address
+            }
+        }
+        """
+        doc = parse_string(source)
+        person = doc.datadicts[0].definitions[1]
+        struct = person.definition
+
+        name_field = struct.fields[0]
+        assert name_field.type_ref.namespace is None
+        assert name_field.type_ref.name == "string"
+
+        home_field = struct.fields[1]
+        assert home_field.type_ref.namespace is None
+        assert home_field.type_ref.name == "Address"
+
+    def test_qualified_type_ref_in_union(self) -> None:
+        """Union alternatives should support qualified type references."""
+        source = """
+        datadict ServiceA {
+            TypeA = { a: string }
+        }
+
+        datadict ServiceB {
+            TypeB = { b: string }
+        }
+
+        datadict {
+            Combined = ServiceA.TypeA | ServiceB.TypeB | "literal"
+        }
+        """
+        doc = parse_string(source)
+        combined = doc.datadicts[2].definitions[0]
+        union = combined.definition
+
+        assert len(union.alternatives) == 3
+
+        # First alternative: qualified
+        alt1 = union.alternatives[0]
+        assert hasattr(alt1, "namespace")
+        assert alt1.namespace == "ServiceA"
+        assert alt1.name == "TypeA"
+
+        # Second alternative: qualified
+        alt2 = union.alternatives[1]
+        assert alt2.namespace == "ServiceB"
+        assert alt2.name == "TypeB"
+
+        # Third alternative: string literal
+        alt3 = union.alternatives[2]
+        assert isinstance(alt3, str)
+
+    def test_qualified_type_ref_in_array(self) -> None:
+        """Array element types should support qualified type references."""
+        source = """
+        datadict ServiceA {
+            Item = { id: string }
+        }
+
+        datadict {
+            ItemList = ServiceA.Item[]
+            StringList = string[]
+        }
+        """
+        doc = parse_string(source)
+
+        item_list = doc.datadicts[1].definitions[0]
+        array1 = item_list.definition
+        assert array1.element_type.namespace == "ServiceA"
+        assert array1.element_type.name == "Item"
+        assert array1.element_type.qualified_name == "ServiceA.Item"
+
+        string_list = doc.datadicts[1].definitions[1]
+        array2 = string_list.definition
+        assert array2.element_type.namespace is None
+        assert array2.element_type.name == "string"
+
+    def test_type_ref_node_properties(self) -> None:
+        """DataDictTypeRefNode should have correct namespace, name, and qualified_name."""
+        source = """
+        datadict NS {
+            TypeA = { 
+                qualified: Other.Type
+                simple: LocalType 
+            }
+        }
+        """
+        doc = parse_string(source)
+        struct = doc.datadicts[0].definitions[0].definition
+
+        qualified = struct.fields[0].type_ref
+        assert qualified.namespace == "Other"
+        assert qualified.name == "Type"
+        assert qualified.qualified_name == "Other.Type"
+
+        simple = struct.fields[1].type_ref
+        assert simple.namespace is None
+        assert simple.name == "LocalType"
+        assert simple.qualified_name == "LocalType"
+
+    def test_struct_field_with_constraints_and_qualified_type(self) -> None:
+        """Struct fields with qualified types and constraints should parse."""
+        source = """
+        datadict ServiceA {
+            Config = { setting: string }
+        }
+
+        datadict {
+            MyStruct = {
+                config: ServiceA.Config [optional]
+                name: string [pattern: "^[a-z]+$"]
+            }
+        }
+        """
+        doc = parse_string(source)
+        struct = doc.datadicts[1].definitions[0].definition
+
+        config_field = struct.fields[0]
+        assert config_field.type_ref.namespace == "ServiceA"
+        assert config_field.type_ref.name == "Config"
+        assert len(config_field.constraints) == 1
+        assert config_field.constraints[0].kind == "optional"
+
+        name_field = struct.fields[1]
+        assert name_field.type_ref.namespace is None
+        assert name_field.type_ref.name == "string"
+        assert len(name_field.constraints) == 1
+        assert name_field.constraints[0].kind == "pattern"
