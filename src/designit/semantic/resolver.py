@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from designit.parser.ast_nodes import DocumentNode
+from designit.parser.ast_nodes import DocumentNode, MarkdownNode
 from designit.parser.parser import parse_file
 
 if TYPE_CHECKING:
@@ -160,8 +160,11 @@ class ImportResolver:
     def _merge_documents(self, entry_path: Path) -> DocumentNode:
         """Merge all parsed documents into one.
 
-        The entry file's definitions take precedence over imported ones.
-        Later imports override earlier imports.
+        Model definitions use post-order traversal (imports first, then current file)
+        so that imported definitions are available.
+
+        Markdown blocks use pre-order traversal (current file first, then imports)
+        so the main document introduction appears at the top.
 
         Args:
             entry_path: Path to the entry file.
@@ -169,11 +172,11 @@ class ImportResolver:
         Returns:
             A merged DocumentNode.
         """
-        # Build import order (depth-first, post-order)
+        # Build import order (depth-first, post-order) for model definitions
         import_order: list[str] = []
         visited: set[str] = set()
 
-        def visit(filepath: str) -> None:
+        def visit_post_order(filepath: str) -> None:
             if filepath in visited:
                 return
             visited.add(filepath)
@@ -182,13 +185,33 @@ class ImportResolver:
             if doc:
                 for imp in doc.imports:
                     imp_path = str(self._resolve_path(imp.path, Path(filepath)))
-                    visit(imp_path)
+                    visit_post_order(imp_path)
 
             import_order.append(filepath)
 
-        visit(str(entry_path))
+        visit_post_order(str(entry_path))
 
-        # Merge in import order (later files override earlier)
+        # Build pre-order list for markdown blocks
+        markdown_order: list[str] = []
+        visited_md: set[str] = set()
+
+        def visit_pre_order(filepath: str) -> None:
+            if filepath in visited_md:
+                return
+            visited_md.add(filepath)
+
+            # Add current file first (pre-order)
+            markdown_order.append(filepath)
+
+            doc = self._parsed_files.get(filepath)
+            if doc:
+                for imp in doc.imports:
+                    imp_path = str(self._resolve_path(imp.path, Path(filepath)))
+                    visit_pre_order(imp_path)
+
+        visit_pre_order(str(entry_path))
+
+        # Merge model definitions in post-order
         merged = DocumentNode()
 
         for filepath in import_order:
@@ -202,6 +225,15 @@ class ImportResolver:
                 merged.scds.extend(doc.scds)
                 merged.datadicts.extend(doc.datadicts)
                 # Don't merge imports - they're already resolved
+
+        # Merge markdown blocks in pre-order
+        markdowns: list[MarkdownNode] = []
+        for filepath in markdown_order:
+            doc = self._parsed_files.get(filepath)
+            if doc:
+                markdowns.extend(doc.markdowns)
+
+        merged.markdowns = markdowns
 
         return merged
 

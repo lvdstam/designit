@@ -401,6 +401,21 @@ class DataDictNode(ASTNode):
 
 
 # ============================================
+# Markdown Block
+# ============================================
+
+
+class MarkdownNode(ASTNode):
+    """A markdown block containing raw markdown text with template expressions.
+
+    The content is the raw text between the braces, with escape sequences preserved.
+    Escape sequences (\\{ and \\}) are processed during rendering, not parsing.
+    """
+
+    content: str
+
+
+# ============================================
 # Document
 # ============================================
 
@@ -415,3 +430,4 @@ class DocumentNode(ASTNode):
     stds: list[STDNode] = Field(default_factory=list)
     structures: list[StructureNode] = Field(default_factory=list)
     datadicts: list[DataDictNode] = Field(default_factory=list)
+    markdowns: list[MarkdownNode] = Field(default_factory=list)

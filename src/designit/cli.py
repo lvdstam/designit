@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
@@ -19,6 +20,10 @@ from designit.generators.mermaid import generate_mermaid
 from designit.model.base import DesignDocument, ValidationMessage, ValidationSeverity
 from designit.semantic.analyzer import analyze_file
 from designit.semantic.validator import validate
+
+if TYPE_CHECKING:
+    from designit.generators.markdown import GeneratedDocument
+    from designit.parser.ast_nodes import DocumentNode
 
 # Graphic formats supported by GraphViz rendering
 GRAPHIC_FORMATS = ("svg", "png", "jpg", "tiff", "webp")
@@ -412,6 +417,207 @@ def lsp(stdio: bool) -> None:
     from designit.lsp.server import start_server
 
     start_server()
+
+
+# ============================================
+# Doc Command Helpers
+# ============================================
+
+# Supported diagram formats for doc command
+DOC_DIAGRAM_FORMATS = ("svg", "png", "mmd")
+
+
+def _get_system_name(doc: DesignDocument) -> str | None:
+    """Get the system name from the first SCD that has a system defined."""
+    for scd in doc.scds.values():
+        if scd.system:
+            return scd.system.name
+    return None
+
+
+def _validate_doc_prerequisites(design_doc: DesignDocument, doc_node: DocumentNode) -> str:
+    """Validate prerequisites for document generation.
+
+    Returns the system name if valid, raises ClickException otherwise.
+    """
+    system_name = _get_system_name(design_doc)
+    if not design_doc.scds or system_name is None:
+        raise click.ClickException("Document generation requires an SCD with a system definition")
+
+    if not doc_node.markdowns:
+        raise click.ClickException("No markdown blocks found in document")
+
+    messages = validate(design_doc)
+    errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+    if errors:
+        _print_messages(errors, [], [])
+        raise click.ClickException(f"Validation failed with {len(errors)} error(s)")
+
+    return system_name
+
+
+def _prepare_markdown_contents(
+    doc_node: DocumentNode,
+) -> list[tuple[str, str | None, int | None]]:
+    """Prepare markdown content tuples from document node."""
+    markdown_contents: list[tuple[str, str | None, int | None]] = []
+    for md in doc_node.markdowns:
+        source_file = md.location.file if md.location else None
+        start_line = md.location.line if md.location else None
+        markdown_contents.append((md.content, source_file, start_line))
+    return markdown_contents
+
+
+def _generate_doc_diagrams(
+    doc: DesignDocument,
+    diagram_refs: list[tuple[str, str]],  # (name, type)
+    output_dir: Path,
+    diagram_format: str,
+) -> None:
+    """Generate diagram files referenced in the document.
+
+    Args:
+        doc: The design document.
+        diagram_refs: List of (diagram_name, diagram_type) tuples.
+        output_dir: Directory to write diagram files.
+        diagram_format: Format for diagrams ("svg", "png", "mmd").
+    """
+    from designit.generators.graphviz import generate_graphviz
+    from designit.generators.mermaid import generate_mermaid
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Get all diagrams in the requested format
+    if diagram_format == "mmd":
+        all_diagrams = generate_mermaid(doc, include_placeholders=True)
+        extension = "mmd"
+    else:
+        all_diagrams = generate_graphviz(doc, include_placeholders=True)
+        extension = diagram_format
+
+    # Generate only referenced diagrams
+    for name, _ in diagram_refs:
+        if name not in all_diagrams:
+            continue
+
+        content = all_diagrams[name]
+        out_file = output_dir / f"{name}.{extension}"
+
+        if diagram_format in ("svg", "png"):
+            _render_graphviz(content, out_file, diagram_format)
+        else:
+            out_file.write_text(content)
+
+        console.print(f"[dim]Generated diagram:[/] {out_file}")
+
+
+def _handle_doc_result(
+    result: GeneratedDocument,
+    design_doc: DesignDocument,
+    output_dir: Path,
+    diagram_dir: Path,
+    diagram_format: str,
+    name: str | None,
+    system_name: str,
+) -> None:
+    """Handle the generated document result: output errors or write files."""
+    if result.errors:
+        for err in result.errors:
+            loc = f"{err.source_file}:{err.line}: " if err.source_file and err.line else ""
+            console.print(f"[bold red]error:[/] {loc}{err.message}")
+        raise click.ClickException(f"Template validation failed with {len(result.errors)} error(s)")
+
+    if result.diagram_refs:
+        diagram_tuples = [(ref.name, ref.diagram_type) for ref in result.diagram_refs]
+        _generate_doc_diagrams(design_doc, diagram_tuples, diagram_dir, diagram_format)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_filename = name or f"{system_name}.md"
+    output_file = output_dir / output_filename
+    output_file.write_text(result.content)
+
+    console.print(f"[bold green]Generated:[/] {output_file}")
+    if result.diagram_refs:
+        console.print(f"[dim]Generated {len(result.diagram_refs)} diagram(s) in {diagram_dir}[/]")
+
+
+@main.command()
+@click.argument("file", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output directory (default: ./generated)",
+)
+@click.option(
+    "--name",
+    type=str,
+    help="Override output filename (default: <system_name>.md)",
+)
+@click.option(
+    "--format",
+    "-f",
+    "diagram_format",
+    type=click.Choice(list(DOC_DIAGRAM_FORMATS)),
+    default="svg",
+    help="Diagram format (default: svg)",
+)
+@click.option(
+    "--output-diagrams",
+    type=click.Path(path_type=Path),
+    help="Directory for diagram files (default: <output>/diagrams)",
+)
+def doc(
+    file: Path,
+    output: Path | None,
+    name: str | None,
+    diagram_format: str,
+    output_diagrams: Path | None,
+) -> None:
+    """Generate markdown documentation from a DesignIt file.
+
+    FILE: Path to the .dit file to process.
+
+    This command processes markdown blocks in the .dit file and generates
+    a combined markdown document with embedded diagrams.
+
+    Example:
+        designit doc design.dit -o docs --format svg
+    """
+    from designit.generators.markdown import generate_document
+    from designit.semantic.resolver import resolve_imports
+
+    try:
+        if diagram_format in ("svg", "png"):
+            _check_graphviz_installed()
+
+        doc_node, _ = resolve_imports(file)
+        design_doc = analyze_file(file)
+        system_name = _validate_doc_prerequisites(design_doc, doc_node)
+        markdown_contents = _prepare_markdown_contents(doc_node)
+
+        output_dir = output or (Path.cwd() / "generated")
+        diagram_dir = output_diagrams or (output_dir / "diagrams")
+        rel_diagram_dir = (
+            diagram_dir.relative_to(output_dir) if output_diagrams else Path("diagrams")
+        )
+
+        result = generate_document(
+            document=design_doc,
+            markdown_contents=markdown_contents,
+            diagram_format=diagram_format,
+            diagram_dir=str(rel_diagram_dir),
+        )
+
+        _handle_doc_result(
+            result, design_doc, output_dir, diagram_dir, diagram_format, name, system_name
+        )
+
+    except click.ClickException:
+        raise
+    except Exception as e:
+        error_console.print(f"[bold red]Error:[/] {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

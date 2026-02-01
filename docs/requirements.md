@@ -1817,6 +1817,408 @@ The extension shall be licensed under MIT license.
 
 ---
 
+## 7. Document Generation
+
+### 7.1 Markdown Block Syntax
+
+#### REQ-DOC-001: Markdown Block Declaration [DONE]
+The DSL shall support markdown blocks for embedding documentation alongside model definitions.
+
+**Acceptance Criteria:**
+- Markdown blocks declared with `markdown { ... }`
+- Content between braces is raw markdown text
+- Multiple markdown blocks allowed per file
+- Markdown blocks can appear at top level (not inside diagram definitions)
+- Backslash escapes single characters: `\{` produces `{`, `\}` produces `}`
+- The closing `}` of the markdown block is identified as an unescaped `}` at the appropriate brace nesting level. This works because: (1) template expressions use double braces `{{...}}` which are self-balancing, and (2) any literal single brace in markdown content must be escaped. This allows the grammar to reliably find the block boundary without ambiguity.
+
+**Example:**
+```
+scd Context {
+    system OrderSystem {}
+    external Customer {}
+    flow OrderRequest: Customer -> OrderSystem
+}
+
+markdown {
+    ## System Context
+    
+    The order processing system handles customer requests.
+    
+    {{diagram:Context}}
+}
+```
+
+**Implementation:**
+- Grammar: `src/designit/grammar/designit.lark`
+- AST: `src/designit/parser/ast_nodes.py` (MarkdownNode)
+
+---
+
+#### REQ-DOC-002: Markdown Block Ordering [DONE]
+Markdown blocks shall appear in output in depth-first pre-order (top-down).
+
+**Acceptance Criteria:**
+- Root file's markdown blocks appear first
+- Then recursively: for each import (in source order), that file's markdown blocks appear, followed by its imports
+- This ensures the main document introduction appears at the top, with imported details following in logical reading order
+
+**Example import tree:**
+```
+main.dit (imports A, B)
+├── A.dit (imports C)
+│   └── C.dit
+└── B.dit
+```
+**Output order:** main → A → C → B
+
+**Implementation:** `src/designit/semantic/resolver.py`
+
+---
+
+#### REQ-DOC-003: Markdown Block in Same File as Model [DONE]
+Markdown blocks may appear in the same `.dit` file as the model elements they reference.
+
+**Acceptance Criteria:**
+- A single file can contain both model definitions and markdown blocks
+- Model elements defined after a markdown block are still accessible via references
+- Allows keeping documentation close to the model it describes
+
+**Example:**
+```
+// Single file with both model and documentation
+scd Context {
+    system API {}
+    external Client {}
+    flow Request: Client -> API
+}
+
+markdown {
+    ## API Overview
+    {{diagram:Context}}
+    
+    The {{Context.API.name}} handles requests from {{Context.Client.name}}.
+}
+```
+
+**Implementation:** `src/designit/parser/parser.py`
+
+---
+
+### 7.2 Template Expressions
+
+#### REQ-DOC-010: Diagram Insertion [DONE]
+Markdown blocks shall support inserting generated diagrams using template syntax.
+
+**Acceptance Criteria:**
+- Syntax: `{{diagram:DiagramName}}`
+- Diagram name must exactly match an SCD, DFD, ERD, STD, or Structure Chart name
+- ERROR if referenced diagram does not exist
+- Diagram format determined by CLI `--format` option (reuses existing generate command option)
+
+**Example:**
+```
+markdown {
+    ## System Context
+    {{diagram:OrderContext}}
+    
+    ## Order Processing Details  
+    {{diagram:OrderProcessingDFD}}
+}
+```
+
+**Implementation:** `src/designit/generators/markdown.py`
+
+---
+
+#### REQ-DOC-011: Element Property Access [DONE]
+Markdown blocks shall support accessing model element properties using dot notation.
+
+**Acceptance Criteria:**
+- Syntax: `{{DiagramName.ElementName.property}}`
+- Supported properties include: `name`, `description`, and other element-specific properties
+- ERROR if diagram, element, or property does not exist
+- Element names are unique within their diagram (per REQ-SEM-087)
+
+**Example:**
+```
+markdown {
+    The {{Context.OrderSystem.name}} system: {{Context.OrderSystem.description}}
+}
+```
+
+**Implementation:** `src/designit/generators/markdown.py`
+
+---
+
+#### REQ-DOC-012: Collection Iteration [DONE]
+Markdown blocks shall support iterating over collections of elements.
+
+**Acceptance Criteria:**
+- Syntax: `{{#each DiagramName.collection}}...{{/each}}`
+- Inside the block, element properties accessed directly: `{{name}}`, `{{description}}`
+- Supported collections by diagram type:
+  - SCD: `externals`, `datastores`, `flows`
+  - DFD: `processes`, `datastores`, `flows`
+  - ERD: `entities`, `relationships`
+  - STD: `states`, `transitions`
+  - Structure: `modules`
+  - DataDict: `definitions`
+- ERROR if diagram or collection does not exist
+
+**Example:**
+```
+markdown {
+    ### External Entities
+    
+    {{#each Context.externals}}
+    - **{{name}}**: {{description}}
+    {{/each}}
+}
+```
+
+**Implementation:** `src/designit/generators/markdown.py`
+
+---
+
+#### REQ-DOC-013: Nested Iteration [DONE]
+Iteration blocks shall support nesting to iterate over nested structures.
+
+**Acceptance Criteria:**
+- Nested `{{#each}}` blocks allowed
+- Inner block has access to outer block's current element via qualified names
+- Useful for iterating over diagram elements and their sub-elements
+
+**Example:**
+```
+markdown {
+    {{#each Context.externals}}
+    ## {{name}}
+    
+    {{description}}
+    {{/each}}
+}
+```
+
+**Implementation:** `src/designit/generators/markdown.py`
+
+---
+
+#### REQ-DOC-014: Top-Level Collection Access [POSTPONE]
+Template expressions shall support accessing top-level diagram collections.
+
+**Note:** Postponed for future implementation.
+
+---
+
+### 7.3 Document Generation Pipeline
+
+#### REQ-DOC-020: Template Validation [DONE]
+All template expressions shall be validated against the semantic model before rendering.
+
+**Acceptance Criteria:**
+- ERROR if `{{diagram:X}}` references non-existent diagram
+- ERROR if `{{X.Y.property}}` references non-existent diagram, element, or property
+- ERROR if `{{#each X.collection}}` references non-existent diagram or collection
+- Validation errors include source location (line number in markdown block)
+- Report all errors found, stopping after maximum count (10 errors)
+- All errors reported before rendering begins
+
+**Implementation:** `src/designit/semantic/validator.py`
+
+---
+
+#### REQ-DOC-021: Document Generation Pipeline [DONE]
+The document generation process shall follow a defined pipeline.
+
+**Acceptance Criteria:**
+1. Parse all `.dit` files (model + markdown blocks)
+2. Resolve imports (depth-first pre-order for markdown ordering)
+3. Build semantic model
+4. Validate model (existing validation rules)
+5. Validate template expressions in markdown blocks
+6. Generate required diagrams (based on `{{diagram:X}}` references)
+7. Render markdown with resolved templates
+8. Output combined markdown document
+
+**Implementation:** `src/designit/generators/markdown.py:generate_document()`
+
+---
+
+### 7.4 CLI Integration
+
+#### REQ-DOC-030: Doc Command [DONE]
+The CLI shall provide a `doc` command to generate markdown documentation.
+
+**Acceptance Criteria:**
+- Command: `designit doc FILE`
+- Parses file with imports
+- Validates model and templates
+- Generates combined markdown output
+- Reports errors if validation fails
+
+**Example:**
+```bash
+designit doc design.dit
+```
+
+**Implementation:** `src/designit/cli.py:doc_cmd()`
+
+---
+
+#### REQ-DOC-031: Doc Output Options [DONE]
+The doc command shall support specifying output directory and filename.
+
+**Acceptance Criteria:**
+- Option: `-o/--output DIR` - output directory (default: `./generated`)
+- Option: `--name FILENAME` - override output filename
+- Default filename: `<scd.system.name>.md` (derived from the SCD's system name)
+- Creates directory if needed
+
+**Example:**
+```bash
+designit doc design.dit -o docs --name architecture.md
+```
+
+**Implementation:** `src/designit/cli.py:doc_cmd()`
+
+---
+
+#### REQ-DOC-032: Doc Diagram Format Option [DONE]
+The doc command shall support specifying the diagram format.
+
+**Acceptance Criteria:**
+- Option: `-f/--format FORMAT` (reuses existing generate command option)
+- Supported formats: `svg` (default), `png`, `mmd` (Mermaid code block)
+- For `svg`/`png`: embeds as image reference
+- For `mmd`: embeds as fenced code block with `mermaid` language tag
+
+**Example:**
+```bash
+# For GitHub markdown (uses mermaid code blocks)
+designit doc design.dit --format mmd
+
+# For PDF generation (uses SVG images)
+designit doc design.dit --format svg
+```
+
+**Implementation:** `src/designit/cli.py:doc_cmd()`
+
+---
+
+#### REQ-DOC-033: Doc Diagram Directory Option [DONE]
+The doc command shall support specifying where diagram files are stored.
+
+**Acceptance Criteria:**
+- Option: `--output-diagrams DIR`
+- Default: `./generated/diagrams`
+- Diagram files written to this directory for all formats (svg, png, mmd)
+- Markdown uses relative paths from output file to diagram directory
+- Creates directory if needed
+
+**Example:**
+```bash
+designit doc design.dit -o docs --output-diagrams docs/images
+```
+
+**Implementation:** `src/designit/cli.py:doc_cmd()`
+
+---
+
+#### REQ-DOC-034: SCD Required for Document Generation [DONE]
+Document generation shall require exactly one SCD with a system definition.
+
+**Acceptance Criteria:**
+- ERROR if no SCD exists in the model
+- ERROR if SCD has no system defined
+- Error message: `"Document generation requires an SCD with a system definition"`
+
+**Implementation:** `src/designit/cli.py:doc_cmd()`
+
+---
+
+### 7.5 Output Formatting
+
+#### REQ-DOC-040: SVG Diagram Embedding [DONE]
+When diagram format is `svg`, diagrams shall be embedded as image references.
+
+**Acceptance Criteria:**
+- SVG files written to diagram directory
+- Markdown includes: `![DiagramName](relative/path/to/diagram.svg)`
+- File names derived from diagram names (sanitized for filesystem)
+- Relative path calculated from markdown file location to diagram directory
+
+**Implementation:** `src/designit/generators/markdown.py`
+
+---
+
+#### REQ-DOC-041: PNG Diagram Embedding [DONE]
+When diagram format is `png`, diagrams shall be embedded as image references.
+
+**Acceptance Criteria:**
+- PNG files written to diagram directory
+- Markdown includes: `![DiagramName](relative/path/to/diagram.png)`
+- Requires GraphViz for rendering
+
+**Implementation:** `src/designit/generators/markdown.py`
+
+---
+
+#### REQ-DOC-042: Mermaid File Embedding [DONE]
+When diagram format is `mmd`, diagrams shall be written as `.mmd` files and referenced in markdown.
+
+**Acceptance Criteria:**
+- Mermaid files written to diagram directory with `.mmd` extension
+- Markdown includes: `![DiagramName](relative/path/to/diagram.mmd)`
+- Consistent with SVG and PNG embedding approach
+- Note: Native rendering depends on markdown renderer support for `.mmd` files
+
+**Implementation:** `src/designit/generators/markdown.py`
+
+---
+
+## Backlog: Diagram Appearance Improvements
+
+These are lower priority improvements identified during development:
+
+#### REQ-GEN-060: DFD Process Circle Shape [TODO]
+DFD processes shall be rendered as circles (not ellipses).
+
+**Acceptance Criteria:**
+- GraphViz: Use `shape=circle` with `fixedsize=true`
+- Mermaid: Adjust styling for circular appearance
+- Process name displayed inside circle
+
+---
+
+#### REQ-GEN-061: SCD External Box Shape Without Description [TODO]
+SCD external entities shall be rendered as simple boxes without embedded descriptions.
+
+**Acceptance Criteria:**
+- External rendered as rectangle with name only
+- Description not shown inside the shape
+- Description available via document generation (REQ-DOC-011)
+
+---
+
+#### REQ-GEN-062: SCD System Box Shape Without Description [TODO]
+SCD system shall be rendered as a box without embedded description.
+
+**Acceptance Criteria:**
+- System rendered with name only (no description in diagram)
+- Description available via document generation
+
+---
+
+#### REQ-GEN-063: DFD Process Without Description [TODO]
+DFD processes shall be rendered without embedded descriptions.
+
+**Acceptance Criteria:**
+- Process rendered with name only
+- Description available via document generation
+
+---
+
 ## Test Coverage Summary
 
 ### Parser Tests (`tests/test_parser.py`)
@@ -1846,6 +2248,19 @@ The extension shall be licensed under MIT license.
 - Orphan element produces warning
 - Missing primary key produces warning
 
+### Document Generation Tests (`tests/test_doc.py`)
+- Markdown block parsing (simple, with template expressions, with escaped braces)
+- Markdown node location tracking
+- Template parser (diagram expressions, property expressions, each blocks)
+- Escaped braces not parsed as template expressions
+- Template validator (diagram references, element properties, collections)
+- Per-diagram-type collection validation (SCD, DFD, ERD, STD, Structure, DataDict)
+- Markdown generator (diagram rendering, property values, each iteration)
+- Escaped braces surrounding template expressions render correctly
+- Unescape braces utility function
+- Document generation pipeline (full integration)
+- Error handling (unknown diagrams, invalid properties, unmatched each blocks)
+
 ### Example Tests (`tests/test_examples.py`)
 - Banking example parses with all imports resolved
 - Banking example has no validation errors
@@ -1874,8 +2289,10 @@ The extension shall be licensed under MIT license.
 | `src/designit/model/datadict.py` | Data dictionary model |
 | `src/designit/generators/mermaid.py` | Mermaid diagram generator |
 | `src/designit/generators/graphviz.py` | GraphViz DOT generator |
+| `src/designit/generators/markdown.py` | Markdown document generator |
 | `src/designit/lsp/server.py` | LSP server implementation |
 | `src/designit/cli.py` | CLI entry point |
 | `vscode-extension/` | VS Code extension |
 | `tests/test_parser.py` | Parser unit tests |
 | `tests/test_semantic.py` | Semantic analysis tests |
+| `tests/test_doc.py` | Document generation tests |

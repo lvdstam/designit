@@ -12,6 +12,7 @@ declaration: import_decl
            | std_decl
            | structure_decl
            | datadict_decl
+           | markdown_decl
 
 // Import statement
 import_decl: IMPORT STRING
@@ -183,6 +184,19 @@ array_constraint: MIN ":" NUMBER    -> array_min_constraint
                 | MAX ":" NUMBER    -> array_max_constraint
 
 // ============================================
+// Markdown Block
+// ============================================
+// Markdown blocks contain raw markdown text with template expressions.
+// Content is extracted during pre-processing and stored as a placeholder string.
+// Braces must be escaped with backslash (\{ \}) in the content.
+markdown_decl: MARKDOWN MARKDOWN_PLACEHOLDER
+
+// Placeholder for markdown content - will be substituted during pre-processing
+// Format: __MARKDOWN_n__ where n is an index
+// High priority to match before IDENTIFIER
+MARKDOWN_PLACEHOLDER.5: /__MARKDOWN_\d+__/
+
+// ============================================
 // Common elements
 // ============================================
 
@@ -239,7 +253,7 @@ placeholder: "..." | "TBD"
 identifier: IDENTIFIER
           | STATE | PROCESS | EXTERNAL | DATASTORE | FLOW
           | ENTITY | RELATIONSHIP | TRANSITION | MODULE | STRUCTURE
-          | DFD | ERD | STD | SCD | DATADICT | IMPORT | INITIAL | SYSTEM | REFINES
+          | DFD | ERD | STD | SCD | DATADICT | IMPORT | INITIAL | SYSTEM | REFINES | MARKDOWN
           | CALLS | DATA_COUPLE | CONTROL_COUPLE
           | PK | FK | UNIQUE | NOT | NULL | PATTERN | OPTIONAL | MIN | MAX
           | STRING_TYPE | INTEGER_TYPE | DECIMAL_TYPE | BOOLEAN_TYPE
@@ -285,6 +299,7 @@ DATETIME_TYPE: "datetime"
 DATE_TYPE: "date"
 TIME_TYPE: "time"
 BINARY_TYPE: "binary"
+MARKDOWN: "markdown"
 
 // ============================================
 // Terminals

@@ -29,6 +29,7 @@ from designit.parser.ast_nodes import (
     FlowNode,
     FlowTypeRefNode,
     ImportNode,
+    MarkdownNode,
     ModuleNode,
     PlaceholderNode,
     ProcessNode,
@@ -86,12 +87,81 @@ def _strip_quotes(s: str) -> str:
     return s
 
 
+def _extract_markdown_blocks(source: str) -> tuple[str, dict[str, str]]:
+    """Extract markdown blocks from source and replace with placeholders.
+
+    Scans for 'markdown {' patterns and extracts content using brace counting.
+    Handles escaped braces (\\{ and \\}) and nested balanced braces.
+
+    Returns:
+        Tuple of (modified_source, placeholder_map)
+        where placeholder_map maps "__MARKDOWN_n__" to the extracted content.
+    """
+    import re
+
+    placeholders: dict[str, str] = {}
+    result_parts: list[str] = []
+    pos = 0
+    placeholder_index = 0
+
+    # Pattern to find 'markdown' followed by optional whitespace and '{'
+    markdown_pattern = re.compile(r"\bmarkdown\s*\{", re.MULTILINE)
+
+    while pos < len(source):
+        match = markdown_pattern.search(source, pos)
+        if not match:
+            # No more markdown blocks
+            result_parts.append(source[pos:])
+            break
+
+        # Add everything before the markdown keyword
+        result_parts.append(source[pos : match.start()])
+
+        # Find the matching closing brace using brace counting
+        content_start = match.end()  # Position after '{'
+        brace_count = 1
+        i = content_start
+        while i < len(source) and brace_count > 0:
+            c = source[i]
+            if c == "\\" and i + 1 < len(source):
+                # Skip escaped character
+                i += 2
+                continue
+            elif c == "{":
+                brace_count += 1
+            elif c == "}":
+                brace_count -= 1
+            i += 1
+
+        if brace_count != 0:
+            # Unbalanced braces - let the parser report the error
+            result_parts.append(source[match.start() :])
+            break
+
+        # Extract content (excluding the braces)
+        content_end = i - 1  # Position of the closing '}'
+        content = source[content_start:content_end]
+
+        # Create placeholder
+        placeholder = f"__MARKDOWN_{placeholder_index}__"
+        placeholders[placeholder] = content
+        placeholder_index += 1
+
+        # Add the markdown declaration with placeholder
+        result_parts.append(f"markdown {placeholder}")
+
+        pos = i
+
+    return "".join(result_parts), placeholders
+
+
 @v_args(inline=False)
 class DesignItTransformer(Transformer[Token, Any]):
     """Transform Lark parse tree into AST nodes."""
 
-    def __init__(self) -> None:
+    def __init__(self, markdown_placeholders: dict[str, str] | None = None) -> None:
         super().__init__()
+        self._markdown_placeholders = markdown_placeholders or {}
 
     # ============================================
     # Terminals
@@ -219,6 +289,21 @@ class DesignItTransformer(Transformer[Token, Any]):
         return str(token)
 
     def BINARY_TYPE(self, token: Token) -> str:
+        return str(token)
+
+    def MARKDOWN(self, token: Token) -> str:
+        return str(token)
+
+    def MARKDOWN_BLOCK(self, token: Token) -> str:
+        """Extract markdown content from the block, stripping outer braces."""
+        content = str(token)
+        # Remove the outer braces
+        if content.startswith("{") and content.endswith("}"):
+            content = content[1:-1]
+        return content
+
+    def MARKDOWN_PLACEHOLDER(self, token: Token) -> str:
+        """Return the placeholder token as-is for later substitution."""
         return str(token)
 
     def identifier(self, items: list[Any]) -> str:
@@ -931,6 +1016,23 @@ class DesignItTransformer(Transformer[Token, Any]):
         return DataDictNode(namespace=namespace, definitions=definitions)
 
     # ============================================
+    # Markdown Block
+    # ============================================
+
+    @v_args(meta=True)
+    def markdown_decl(self, meta: Any, items: list[Any]) -> MarkdownNode:
+        """Handle markdown block: markdown __MARKDOWN_n__."""
+        # items: [MARKDOWN, placeholder_string]
+        # Look up the actual content from the placeholder map
+        content = ""
+        for item in items:
+            if isinstance(item, str) and item.startswith("__MARKDOWN_"):
+                # Look up the content from the placeholder map
+                content = self._markdown_placeholders.get(item, "")
+                break
+        return MarkdownNode(content=content, location=_get_location(meta))
+
+    # ============================================
     # Document
     # ============================================
 
@@ -948,6 +1050,7 @@ class DesignItTransformer(Transformer[Token, Any]):
         stds = []
         structures = []
         datadicts = []
+        markdowns = []
 
         for item in items:
             if isinstance(item, ImportNode):
@@ -964,6 +1067,8 @@ class DesignItTransformer(Transformer[Token, Any]):
                 structures.append(item)
             elif isinstance(item, DataDictNode):
                 datadicts.append(item)
+            elif isinstance(item, MarkdownNode):
+                markdowns.append(item)
 
         return DocumentNode(
             imports=imports,
@@ -973,6 +1078,7 @@ class DesignItTransformer(Transformer[Token, Any]):
             stds=stds,
             structures=structures,
             datadicts=datadicts,
+            markdowns=markdowns,
         )
 
 
@@ -994,8 +1100,6 @@ def _create_parser() -> Lark:
 
 # Global parser instance (lazy loaded)
 _parser: Lark | None = None
-# Global transformer instance
-_transformer: DesignItTransformer | None = None
 
 
 def _get_parser() -> Lark:
@@ -1004,14 +1108,6 @@ def _get_parser() -> Lark:
     if _parser is None:
         _parser = _create_parser()
     return _parser
-
-
-def _get_transformer() -> DesignItTransformer:
-    """Get or create the global transformer instance."""
-    global _transformer
-    if _transformer is None:
-        _transformer = DesignItTransformer()
-    return _transformer
 
 
 def parse_string(source: str, filename: str | None = None) -> DocumentNode:
@@ -1027,10 +1123,14 @@ def parse_string(source: str, filename: str | None = None) -> DocumentNode:
     Raises:
         ParseError: If parsing fails.
     """
+    # Pre-process to extract markdown blocks
+    processed_source, markdown_placeholders = _extract_markdown_blocks(source)
+
     parser = _get_parser()
-    transformer = _get_transformer()
+    # Create a transformer with the markdown placeholder map
+    transformer = DesignItTransformer(markdown_placeholders)
     try:
-        tree = parser.parse(source)
+        tree = parser.parse(processed_source)
         result = transformer.transform(tree)
         if isinstance(result, DocumentNode):
             return result
