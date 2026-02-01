@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 from lark import Lark, Token, Transformer, v_args
 from lark.exceptions import UnexpectedInput
@@ -61,6 +61,10 @@ class ParseError(Exception):
         self.line = line
         self.column = column
         super().__init__(f"{message} at line {line}, column {column}" if line else message)
+
+
+# Type alias for property values
+PropertyValue: TypeAlias = str | int | float | bool | list[str | int | float | bool]
 
 
 def _get_location(meta: Any) -> SourceLocation | None:
@@ -256,7 +260,15 @@ class DesignItTransformer(Transformer[Token, Any]):
 
     def property_decl(self, items: list[Any]) -> PropertyNode:
         name = items[0]
-        value = items[1] if len(items) > 1 else None
+        raw_value = items[1] if len(items) > 1 else ""
+        # Validate and convert the value to the expected type
+        value: PropertyValue
+        if isinstance(raw_value, (str, int, float, bool)):
+            value = raw_value
+        elif isinstance(raw_value, list):
+            value = [v for v in raw_value if isinstance(v, (str, int, float, bool))]
+        else:
+            value = str(raw_value) if raw_value is not None else ""
         return PropertyNode(name=name, value=value)
 
     def properties(self, items: list[Any]) -> list[PropertyNode]:
@@ -323,7 +335,10 @@ class DesignItTransformer(Transformer[Token, Any]):
         return "binary"
 
     def base_type(self, items: list[Any]) -> str:
-        return items[0]
+        result = items[0]
+        if not isinstance(result, str):
+            raise TypeError(f"base_type expected str, got {type(result).__name__}")
+        return result
 
     def type_expr(self, items: list[Any]) -> DataDictTypeRefNode:
         """Handle type expression: can be base_type, qualified_type_ref, or IDENTIFIER."""
@@ -583,7 +598,10 @@ class DesignItTransformer(Transformer[Token, Any]):
         return ConstraintNode(kind="pattern", pattern=pattern)
 
     def constraint(self, items: list[Any]) -> ConstraintNode:
-        return items[0]
+        result = items[0]
+        if not isinstance(result, ConstraintNode):
+            raise TypeError(f"constraint expected ConstraintNode, got {type(result).__name__}")
+        return result
 
     def attribute_constraints(self, items: list[Any]) -> list[ConstraintNode]:
         return list(items)
@@ -809,7 +827,12 @@ class DesignItTransformer(Transformer[Token, Any]):
         return ("max", items[0])
 
     def field_constraint(self, items: list[Any]) -> FieldConstraintNode:
-        return items[0]
+        result = items[0]
+        if not isinstance(result, FieldConstraintNode):
+            raise TypeError(
+                f"field_constraint expected FieldConstraintNode, got {type(result).__name__}"
+            )
+        return result
 
     def field_constraints(self, items: list[Any]) -> list[FieldConstraintNode]:
         return list(items)
@@ -839,7 +862,10 @@ class DesignItTransformer(Transformer[Token, Any]):
         return item
 
     def union_alt(self, items: list[Any]) -> str | DataDictTypeRefNode:
-        """Handle subsequent alternatives in union: can be string literal, base type, or type ref."""
+        """
+        Handle subsequent alternatives in union: can be string literal,
+        base type, or type ref.
+        """
         item = items[0] if items else ""
         return item
 
@@ -886,7 +912,10 @@ class DesignItTransformer(Transformer[Token, Any]):
         return DataDefNode(name=name, definition=definition, location=_get_location(meta))
 
     def datadict_body(self, items: list[Any]) -> DataDefNode:
-        return items[0]
+        result = items[0]
+        if not isinstance(result, DataDefNode):
+            raise TypeError(f"datadict_body expected DataDefNode, got {type(result).__name__}")
+        return result
 
     def datadict_decl(self, items: list[Any]) -> DataDictNode:
         # items: [DATADICT, IDENTIFIER?, ...definitions]
@@ -906,7 +935,10 @@ class DesignItTransformer(Transformer[Token, Any]):
     # ============================================
 
     def declaration(self, items: list[Any]) -> ASTNode:
-        return items[0]
+        result = items[0]
+        if not isinstance(result, ASTNode):
+            raise TypeError(f"declaration expected ASTNode, got {type(result).__name__}")
+        return result
 
     def start(self, items: list[Any]) -> DocumentNode:
         imports = []

@@ -213,24 +213,22 @@ class DataDictionaryModel(BaseModel):
             if not defn or not defn.definition:
                 return
 
-            if isinstance(defn.definition, StructType):
-                for field in defn.definition.fields.values():
-                    result.add(field.type_ref)
-                    collect(field.type_ref.qualified_name)
-            elif isinstance(defn.definition, UnionType):
-                for alt in defn.definition.alternatives:
-                    if isinstance(alt, TypeRef):
-                        result.add(alt)
-                        collect(alt.qualified_name)
-                    # String literals are not type references, skip them
-            elif isinstance(defn.definition, ArrayType):
-                result.add(defn.definition.element_type)
-                collect(defn.definition.element_type.qualified_name)
-            elif isinstance(defn.definition, TypeReference):
-                # Simple type reference (top-level TypeName = OtherType)
-                ref = TypeRef(namespace=None, name=defn.definition.name)
+            refs = self._get_type_refs(defn.definition)
+            for ref in refs:
                 result.add(ref)
-                collect(defn.definition.name)
+                collect(ref.qualified_name)
 
         collect(type_name)
         return result
+
+    def _get_type_refs(self, definition: TypeDefinition) -> list[TypeRef]:
+        """Get direct type references from a type definition."""
+        if isinstance(definition, StructType):
+            return [field.type_ref for field in definition.fields.values()]
+        elif isinstance(definition, UnionType):
+            return [alt for alt in definition.alternatives if isinstance(alt, TypeRef)]
+        elif isinstance(definition, ArrayType):
+            return [definition.element_type]
+        elif isinstance(definition, TypeReference):
+            return [TypeRef(namespace=None, name=definition.name)]
+        return []

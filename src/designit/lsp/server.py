@@ -388,6 +388,75 @@ def hover(params: lsp.HoverParams) -> lsp.Hover | None:
 # ============================================
 
 
+def _make_symbol(name: str, kind: lsp.SymbolKind) -> lsp.DocumentSymbol:
+    """Create a DocumentSymbol with default range."""
+    return lsp.DocumentSymbol(
+        name=name,
+        kind=kind,
+        range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+        selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+    )
+
+
+def _make_symbol_with_children(
+    name: str, kind: lsp.SymbolKind, children: list[lsp.DocumentSymbol]
+) -> lsp.DocumentSymbol:
+    """Create a DocumentSymbol with children and default range."""
+    return lsp.DocumentSymbol(
+        name=name,
+        kind=kind,
+        range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+        selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
+        children=children,
+    )
+
+
+def _collect_dfd_symbols(design: Any) -> list[lsp.DocumentSymbol]:
+    """Collect document symbols for all DFDs."""
+    symbols: list[lsp.DocumentSymbol] = []
+    for name, dfd in design.dfds.items():
+        children: list[lsp.DocumentSymbol] = []
+        for ext_name in dfd.externals:
+            children.append(_make_symbol(ext_name, lsp.SymbolKind.Interface))
+        for proc_name in dfd.processes:
+            children.append(_make_symbol(proc_name, lsp.SymbolKind.Function))
+        symbols.append(_make_symbol_with_children(f"DFD: {name}", lsp.SymbolKind.Module, children))
+    return symbols
+
+
+def _collect_erd_symbols(design: Any) -> list[lsp.DocumentSymbol]:
+    """Collect document symbols for all ERDs."""
+    symbols: list[lsp.DocumentSymbol] = []
+    for name, erd in design.erds.items():
+        children = [_make_symbol(entity_name, lsp.SymbolKind.Class) for entity_name in erd.entities]
+        symbols.append(_make_symbol_with_children(f"ERD: {name}", lsp.SymbolKind.Module, children))
+    return symbols
+
+
+def _collect_std_symbols(design: Any) -> list[lsp.DocumentSymbol]:
+    """Collect document symbols for all STDs."""
+    symbols: list[lsp.DocumentSymbol] = []
+    for name, std in design.stds.items():
+        children = [_make_symbol(state_name, lsp.SymbolKind.Enum) for state_name in std.states]
+        symbols.append(_make_symbol_with_children(f"STD: {name}", lsp.SymbolKind.Module, children))
+    return symbols
+
+
+def _collect_scd_symbols(design: Any) -> list[lsp.DocumentSymbol]:
+    """Collect document symbols for all SCDs."""
+    symbols: list[lsp.DocumentSymbol] = []
+    for name, scd in design.scds.items():
+        children: list[lsp.DocumentSymbol] = []
+        if scd.system:
+            children.append(_make_symbol(scd.system.name, lsp.SymbolKind.Class))
+        for ext_name in scd.externals:
+            children.append(_make_symbol(ext_name, lsp.SymbolKind.Interface))
+        for ds_name in scd.datastores:
+            children.append(_make_symbol(ds_name, lsp.SymbolKind.Variable))
+        symbols.append(_make_symbol_with_children(f"SCD: {name}", lsp.SymbolKind.Module, children))
+    return symbols
+
+
 @server.feature(lsp.TEXT_DOCUMENT_DOCUMENT_SYMBOL)
 def document_symbol(params: lsp.DocumentSymbolParams) -> list[lsp.DocumentSymbol]:
     """Provide document symbols for outline view."""
@@ -398,127 +467,10 @@ def document_symbol(params: lsp.DocumentSymbolParams) -> list[lsp.DocumentSymbol
         return []
 
     symbols: list[lsp.DocumentSymbol] = []
-
-    # Add DFDs
-    for name, dfd in design.dfds.items():
-        children: list[lsp.DocumentSymbol] = []
-
-        for ext_name in dfd.externals:
-            children.append(
-                lsp.DocumentSymbol(
-                    name=ext_name,
-                    kind=lsp.SymbolKind.Interface,
-                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                )
-            )
-
-        for proc_name in dfd.processes:
-            children.append(
-                lsp.DocumentSymbol(
-                    name=proc_name,
-                    kind=lsp.SymbolKind.Function,
-                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                )
-            )
-
-        symbols.append(
-            lsp.DocumentSymbol(
-                name=f"DFD: {name}",
-                kind=lsp.SymbolKind.Module,
-                range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                children=children,
-            )
-        )
-
-    # Add ERDs
-    for name, erd in design.erds.items():
-        children = []
-        for entity_name in erd.entities:
-            children.append(
-                lsp.DocumentSymbol(
-                    name=entity_name,
-                    kind=lsp.SymbolKind.Class,
-                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                )
-            )
-
-        symbols.append(
-            lsp.DocumentSymbol(
-                name=f"ERD: {name}",
-                kind=lsp.SymbolKind.Module,
-                range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                children=children,
-            )
-        )
-
-    # Add STDs
-    for name, std in design.stds.items():
-        children = []
-        for state_name in std.states:
-            children.append(
-                lsp.DocumentSymbol(
-                    name=state_name,
-                    kind=lsp.SymbolKind.Enum,
-                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                )
-            )
-
-        symbols.append(
-            lsp.DocumentSymbol(
-                name=f"STD: {name}",
-                kind=lsp.SymbolKind.Module,
-                range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                children=children,
-            )
-        )
-
-    # Add SCDs
-    for name, scd in design.scds.items():
-        children = []
-        if scd.system:
-            children.append(
-                lsp.DocumentSymbol(
-                    name=scd.system.name,
-                    kind=lsp.SymbolKind.Class,
-                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                )
-            )
-        for ext_name in scd.externals:
-            children.append(
-                lsp.DocumentSymbol(
-                    name=ext_name,
-                    kind=lsp.SymbolKind.Interface,
-                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                )
-            )
-        for ds_name in scd.datastores:
-            children.append(
-                lsp.DocumentSymbol(
-                    name=ds_name,
-                    kind=lsp.SymbolKind.Variable,
-                    range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                    selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                )
-            )
-
-        symbols.append(
-            lsp.DocumentSymbol(
-                name=f"SCD: {name}",
-                kind=lsp.SymbolKind.Module,
-                range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                selection_range=lsp.Range(lsp.Position(0, 0), lsp.Position(0, 0)),
-                children=children,
-            )
-        )
+    symbols.extend(_collect_dfd_symbols(design))
+    symbols.extend(_collect_erd_symbols(design))
+    symbols.extend(_collect_std_symbols(design))
+    symbols.extend(_collect_scd_symbols(design))
 
     return symbols
 

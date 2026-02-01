@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from designit.model.base import (
     DesignDocument,
@@ -112,7 +112,7 @@ class SemanticError(Exception):
 class SemanticAnalyzer:
     """Analyzes AST and builds semantic model."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.messages: list[ValidationMessage] = []
         self.current_file: str | None = None
 
@@ -210,7 +210,20 @@ class SemanticAnalyzer:
             line=node.location.line if node.location else None,
         )
 
-        # Process externals (should be empty for new DFDs but kept for backward compat)
+        self._analyze_dfd_externals(node, model, source_file)
+        self._analyze_dfd_processes(node, model, source_file)
+        self._analyze_dfd_datastores(node, model, source_file)
+        inbound_handlers = self._analyze_dfd_flows(node, model, source_file)
+
+        # Store inbound handler counts in metadata for later validation
+        model._inbound_flow_handlers = inbound_handlers  # type: ignore[attr-defined]
+
+        return model
+
+    def _analyze_dfd_externals(
+        self, node: DFDNode, model: DFDModel, source_file: str | None
+    ) -> None:
+        """Analyze external entities in a DFD."""
         for ext in node.externals:
             props = self._extract_properties(ext.body)
             external = ExternalEntity(
@@ -224,7 +237,10 @@ class SemanticAnalyzer:
                 self._warning(f"Duplicate external entity: {ext.name}", ext.name)
             model.externals[ext.name] = external
 
-        # Process processes
+    def _analyze_dfd_processes(
+        self, node: DFDNode, model: DFDModel, source_file: str | None
+    ) -> None:
+        """Analyze processes in a DFD."""
         for proc in node.processes:
             props = self._extract_properties(proc.body)
             process = Process(
@@ -240,7 +256,10 @@ class SemanticAnalyzer:
                 self._warning(f"Duplicate process: {proc.name}", proc.name)
             model.processes[proc.name] = process
 
-        # Process datastores
+    def _analyze_dfd_datastores(
+        self, node: DFDNode, model: DFDModel, source_file: str | None
+    ) -> None:
+        """Analyze datastores in a DFD."""
         for ds in node.datastores:
             props = self._extract_properties(ds.body)
             datastore = Datastore(
@@ -254,32 +273,20 @@ class SemanticAnalyzer:
                 self._warning(f"Duplicate datastore: {ds.name}", ds.name)
             model.datastores[ds.name] = datastore
 
-        # Process flows (supports internal and boundary flows)
-        # Track inbound boundary flows to detect duplicates
-        inbound_flow_handlers: dict[str, list[str]] = {}  # flow_name -> [handler_process_names]
+    def _analyze_dfd_flows(
+        self, node: DFDNode, model: DFDModel, source_file: str | None
+    ) -> dict[str, list[str]]:
+        """Analyze flows in a DFD. Returns inbound flow handlers map."""
+        inbound_flow_handlers: dict[str, list[str]] = {}
 
         for flow in node.flows:
-            # Determine flow type based on source/target presence
-            flow_type: FlowType
-            if flow.source is None and flow.target is not None:
-                # Boundary inbound flow: -> Target
-                flow_type = "inbound"
-                source_ref = None
-                target_ref = ElementReference(name=flow.target.entity)
-                # Track this handler for detecting duplicates
+            flow_type, source_ref, target_ref = self._determine_flow_type(flow)
+
+            # Track inbound handlers for duplicate detection
+            if flow_type == "inbound" and flow.target:
                 if flow.name not in inbound_flow_handlers:
                     inbound_flow_handlers[flow.name] = []
                 inbound_flow_handlers[flow.name].append(flow.target.entity)
-            elif flow.source is not None and flow.target is None:
-                # Boundary outbound flow: Source ->
-                flow_type = "outbound"
-                source_ref = ElementReference(name=flow.source.entity)
-                target_ref = None
-            else:
-                # Internal flow: Source -> Target
-                flow_type = "internal"
-                source_ref = ElementReference(name=flow.source.entity) if flow.source else None
-                target_ref = ElementReference(name=flow.target.entity) if flow.target else None
 
             data_flow = DataFlow(
                 name=flow.name,
@@ -295,11 +302,23 @@ class SemanticAnalyzer:
                 self._warning(f"Duplicate flow: {flow.name} ({flow_type})", flow.name)
             model.flows[flow_key] = data_flow
 
-        # Store inbound handler counts in metadata for later validation
-        # We'll add an attribute to track this
-        model._inbound_flow_handlers = inbound_flow_handlers  # type: ignore[attr-defined]
+        return inbound_flow_handlers
 
-        return model
+    def _determine_flow_type(
+        self, flow: Any
+    ) -> tuple[FlowType, ElementReference | None, ElementReference | None]:
+        """Determine flow type and create source/target references."""
+        if flow.source is None and flow.target is not None:
+            # Boundary inbound flow: -> Target
+            return "inbound", None, ElementReference(name=flow.target.entity)
+        elif flow.source is not None and flow.target is None:
+            # Boundary outbound flow: Source ->
+            return "outbound", ElementReference(name=flow.source.entity), None
+        else:
+            # Internal flow: Source -> Target
+            source_ref = ElementReference(name=flow.source.entity) if flow.source else None
+            target_ref = ElementReference(name=flow.target.entity) if flow.target else None
+            return "internal", source_ref, target_ref
 
     # ============================================
     # ERD Analysis
@@ -665,6 +684,7 @@ class SemanticAnalyzer:
             # Determine direction based on arrow type and endpoint order
             # flow.source is the left endpoint, flow.target is the right endpoint
             # flow.direction is "outbound" for ->, "bidirectional" for <->
+            direction: Literal["inbound", "outbound", "bidirectional"]
             if flow.direction == "bidirectional":
                 direction = "bidirectional"
             else:
@@ -711,42 +731,70 @@ class SemanticAnalyzer:
             files=[source_file] if source_file else [],
         )
 
-        # Analyze DFDs
+        self._analyze_all_dfds(doc, design, source_file)
+        self._analyze_all_erds(doc, design, source_file)
+        self._analyze_all_stds(doc, design, source_file)
+        self._analyze_all_structures(doc, design, source_file)
+        self._analyze_all_scds(doc, design, source_file)
+        self._analyze_all_datadicts(doc, design, source_file)
+
+        design.validation_messages = self.messages.copy()
+        return design
+
+    def _analyze_all_dfds(
+        self, doc: DocumentNode, design: DesignDocument, source_file: str | None
+    ) -> None:
+        """Analyze all DFDs in the document."""
         for dfd in doc.dfds:
             model = self._analyze_dfd(dfd, source_file)
             if dfd.name in design.dfds:
                 self._warning(f"Duplicate DFD: {dfd.name}", dfd.name)
             design.dfds[dfd.name] = model
 
-        # Analyze ERDs
+    def _analyze_all_erds(
+        self, doc: DocumentNode, design: DesignDocument, source_file: str | None
+    ) -> None:
+        """Analyze all ERDs in the document."""
         for erd in doc.erds:
             model = self._analyze_erd(erd, source_file)
             if erd.name in design.erds:
                 self._warning(f"Duplicate ERD: {erd.name}", erd.name)
             design.erds[erd.name] = model
 
-        # Analyze STDs
+    def _analyze_all_stds(
+        self, doc: DocumentNode, design: DesignDocument, source_file: str | None
+    ) -> None:
+        """Analyze all STDs in the document."""
         for std in doc.stds:
             model = self._analyze_std(std, source_file)
             if std.name in design.stds:
                 self._warning(f"Duplicate STD: {std.name}", std.name)
             design.stds[std.name] = model
 
-        # Analyze Structure Charts
+    def _analyze_all_structures(
+        self, doc: DocumentNode, design: DesignDocument, source_file: str | None
+    ) -> None:
+        """Analyze all structure charts in the document."""
         for structure in doc.structures:
             model = self._analyze_structure(structure, source_file)
             if structure.name in design.structures:
                 self._warning(f"Duplicate structure chart: {structure.name}", structure.name)
             design.structures[structure.name] = model
 
-        # Analyze SCDs
+    def _analyze_all_scds(
+        self, doc: DocumentNode, design: DesignDocument, source_file: str | None
+    ) -> None:
+        """Analyze all SCDs in the document."""
         for scd in doc.scds:
             model = self._analyze_scd(scd, source_file)
             if scd.name in design.scds:
                 self._warning(f"Duplicate SCD: {scd.name}", scd.name)
             design.scds[scd.name] = model
 
-        # Analyze Data Dictionaries (merge into one)
+    def _analyze_all_datadicts(
+        self, doc: DocumentNode, design: DesignDocument, source_file: str | None
+    ) -> None:
+        """Analyze all data dictionaries and merge into one."""
         if doc.datadicts:
             merged_datadict = DataDictionaryModel()
             for dd in doc.datadicts:
@@ -756,9 +804,6 @@ class SemanticAnalyzer:
                         self._warning(f"Duplicate data definition: {name}", name)
                     merged_datadict.definitions[name] = defn
             design.data_dictionary = merged_datadict
-
-        design.validation_messages = self.messages.copy()
-        return design
 
 
 def analyze_file(filepath: str | Path, resolve_all_imports: bool = True) -> DesignDocument:

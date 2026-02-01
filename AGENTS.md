@@ -160,6 +160,9 @@ uv run ruff check src/ tests/
 # Run type checking
 uv run mypy src/
 
+# Check cyclomatic complexity (max 10)
+uv run ruff check src/ --select=C901 --config="lint.mccabe.max-complexity=10"
+
 # Test CLI
 uv run designit check examples/banking/main.dit
 
@@ -175,7 +178,10 @@ cd vscode-extension && npm install && npm run package
 1. Run tests: `uv run pytest tests/ -v`
 2. Run linting: `uv run ruff check src/ tests/`
 3. Run type checking: `uv run mypy src/`
-4. Test CLI commands work correctly
+4. Check complexity: `uv run ruff check src/ --select=C901 --config="lint.mccabe.max-complexity=10"`
+5. Test CLI commands work correctly
+
+All checks (tests, linting, type checking, complexity) must pass before committing.
 
 ## Diagram Types
 

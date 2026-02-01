@@ -83,7 +83,17 @@ class DesignDocument(BaseModel):
     def placeholders(self) -> list[tuple[str, str, str | None]]:
         """Get all placeholder elements as (type, name, file) tuples."""
         result: list[tuple[str, str, str | None]] = []
+        result.extend(self._collect_scd_placeholders())
+        result.extend(self._collect_dfd_placeholders())
+        result.extend(self._collect_erd_placeholders())
+        result.extend(self._collect_std_placeholders())
+        result.extend(self._collect_structure_placeholders())
+        result.extend(self._collect_datadict_placeholders())
+        return result
 
+    def _collect_scd_placeholders(self) -> list[tuple[str, str, str | None]]:
+        """Collect placeholders from all SCDs."""
+        result: list[tuple[str, str, str | None]] = []
         for scd in self.scds.values():
             if scd.system and scd.system.is_placeholder:
                 result.append(("system", scd.system.name, scd.system.source_file))
@@ -93,7 +103,11 @@ class DesignDocument(BaseModel):
             for ds in scd.datastores.values():
                 if ds.is_placeholder:
                     result.append(("datastore", ds.name, ds.source_file))
+        return result
 
+    def _collect_dfd_placeholders(self) -> list[tuple[str, str, str | None]]:
+        """Collect placeholders from all DFDs."""
+        result: list[tuple[str, str, str | None]] = []
         for dfd in self.dfds.values():
             for ext in dfd.externals.values():
                 if ext.is_placeholder:
@@ -104,27 +118,42 @@ class DesignDocument(BaseModel):
             for ds in dfd.datastores.values():
                 if ds.is_placeholder:
                     result.append(("datastore", ds.name, ds.source_file))
+        return result
 
+    def _collect_erd_placeholders(self) -> list[tuple[str, str, str | None]]:
+        """Collect placeholders from all ERDs."""
+        result: list[tuple[str, str, str | None]] = []
         for erd in self.erds.values():
             for entity in erd.entities.values():
                 if entity.is_placeholder:
                     result.append(("entity", entity.name, entity.source_file))
+        return result
 
+    def _collect_std_placeholders(self) -> list[tuple[str, str, str | None]]:
+        """Collect placeholders from all STDs."""
+        result: list[tuple[str, str, str | None]] = []
         for std in self.stds.values():
             for state in std.states.values():
                 if state.is_placeholder:
                     result.append(("state", state.name, state.source_file))
+        return result
 
+    def _collect_structure_placeholders(self) -> list[tuple[str, str, str | None]]:
+        """Collect placeholders from all structure charts."""
+        result: list[tuple[str, str, str | None]] = []
         for structure in self.structures.values():
             for module in structure.modules.values():
                 if module.is_placeholder:
                     result.append(("module", module.name, module.source_file))
+        return result
 
+    def _collect_datadict_placeholders(self) -> list[tuple[str, str, str | None]]:
+        """Collect placeholders from the data dictionary."""
+        result: list[tuple[str, str, str | None]] = []
         if self.data_dictionary:
             for defn in self.data_dictionary.definitions.values():
                 if defn.is_placeholder:
                     result.append(("datadef", defn.name, defn.source_file))
-
         return result
 
 

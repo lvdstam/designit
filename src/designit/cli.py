@@ -14,12 +14,118 @@ from rich.table import Table
 
 from designit.generators.graphviz import generate_graphviz
 from designit.generators.mermaid import generate_mermaid
-from designit.model.base import ValidationSeverity
+from designit.model.base import DesignDocument, ValidationMessage, ValidationSeverity
 from designit.semantic.analyzer import analyze_file
 from designit.semantic.validator import validate
 
 console = Console()
 error_console = Console(stderr=True)
+
+
+# ============================================
+# Parse Command Helpers
+# ============================================
+
+
+def _print_files_included(doc: DesignDocument) -> None:
+    """Print list of files included in the document."""
+    if len(doc.files) > 1:
+        console.print("[bold]Files included:[/]")
+        for f in doc.files:
+            console.print(f"  - {f}")
+        console.print()
+
+
+def _build_summary_table(doc: DesignDocument) -> Table:
+    """Build a summary table of document contents."""
+    table = Table(title="Document Summary")
+    table.add_column("Type", style="cyan")
+    table.add_column("Count", justify="right")
+    table.add_column("Names")
+
+    if doc.scds:
+        table.add_row("SCDs", str(len(doc.scds)), ", ".join(doc.scds.keys()))
+    if doc.dfds:
+        table.add_row("DFDs", str(len(doc.dfds)), ", ".join(doc.dfds.keys()))
+    if doc.erds:
+        table.add_row("ERDs", str(len(doc.erds)), ", ".join(doc.erds.keys()))
+    if doc.stds:
+        table.add_row("STDs", str(len(doc.stds)), ", ".join(doc.stds.keys()))
+    if doc.structures:
+        table.add_row("Structures", str(len(doc.structures)), ", ".join(doc.structures.keys()))
+    if doc.data_dictionary:
+        table.add_row(
+            "Data Definitions",
+            str(len(doc.data_dictionary.definitions)),
+            ", ".join(list(doc.data_dictionary.definitions.keys())[:5])
+            + ("..." if len(doc.data_dictionary.definitions) > 5 else ""),
+        )
+
+    return table
+
+
+def _print_placeholders(doc: DesignDocument) -> None:
+    """Print placeholder elements in the document."""
+    placeholders = doc.placeholders
+    if placeholders:
+        console.print(f"\n[yellow]Placeholders ({len(placeholders)}):[/]")
+        for elem_type, name, pfile in placeholders:
+            loc = f" ({pfile})" if pfile else ""
+            console.print(f"  - {elem_type}: [bold]{name}[/]{loc}")
+
+
+# ============================================
+# Check Command Helpers
+# ============================================
+
+
+def _group_messages(
+    messages: list[ValidationMessage],
+) -> tuple[list[ValidationMessage], list[ValidationMessage], list[ValidationMessage]]:
+    """Group validation messages by severity."""
+    errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+    warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+    infos = [m for m in messages if m.severity == ValidationSeverity.INFO]
+    return errors, warnings, infos
+
+
+def _print_messages(
+    errors: list[ValidationMessage],
+    warnings: list[ValidationMessage],
+    infos: list[ValidationMessage],
+) -> None:
+    """Print validation messages with appropriate formatting."""
+    for msg in errors:
+        loc = f"{msg.file}:{msg.line}: " if msg.file and msg.line else ""
+        console.print(f"[bold red]error:[/] {loc}{msg.message}")
+
+    for msg in warnings:
+        loc = f"{msg.file}:{msg.line}: " if msg.file and msg.line else ""
+        console.print(f"[bold yellow]warning:[/] {loc}{msg.message}")
+
+    for msg in infos:
+        loc = f"{msg.file}:{msg.line}: " if msg.file and msg.line else ""
+        console.print(f"[dim]info:[/] {loc}{msg.message}")
+
+
+def _print_summary(
+    errors: list[ValidationMessage],
+    warnings: list[ValidationMessage],
+    infos: list[ValidationMessage],
+) -> None:
+    """Print summary counts of validation messages."""
+    console.print()
+    if errors:
+        console.print(f"[bold red]{len(errors)} error(s)[/]", end="")
+    if warnings:
+        if errors:
+            console.print(", ", end="")
+        console.print(f"[bold yellow]{len(warnings)} warning(s)[/]", end="")
+    if infos:
+        if errors or warnings:
+            console.print(", ", end="")
+        console.print(f"[dim]{len(infos)} info(s)[/]", end="")
+    console.print()
 
 
 @click.group()
@@ -45,44 +151,9 @@ def parse(file: Path, no_imports: bool) -> None:
 
         console.print(f"\n[bold green]Successfully parsed:[/] {file}\n")
 
-        # Show files included
-        if len(doc.files) > 1:
-            console.print("[bold]Files included:[/]")
-            for f in doc.files:
-                console.print(f"  - {f}")
-            console.print()
-
-        # Show summary
-        table = Table(title="Document Summary")
-        table.add_column("Type", style="cyan")
-        table.add_column("Count", justify="right")
-        table.add_column("Names")
-
-        if doc.dfds:
-            table.add_row("DFDs", str(len(doc.dfds)), ", ".join(doc.dfds.keys()))
-        if doc.erds:
-            table.add_row("ERDs", str(len(doc.erds)), ", ".join(doc.erds.keys()))
-        if doc.stds:
-            table.add_row("STDs", str(len(doc.stds)), ", ".join(doc.stds.keys()))
-        if doc.structures:
-            table.add_row("Structures", str(len(doc.structures)), ", ".join(doc.structures.keys()))
-        if doc.data_dictionary:
-            table.add_row(
-                "Data Definitions",
-                str(len(doc.data_dictionary.definitions)),
-                ", ".join(list(doc.data_dictionary.definitions.keys())[:5])
-                + ("..." if len(doc.data_dictionary.definitions) > 5 else ""),
-            )
-
-        console.print(table)
-
-        # Show placeholders
-        placeholders = doc.placeholders
-        if placeholders:
-            console.print(f"\n[yellow]Placeholders ({len(placeholders)}):[/]")
-            for elem_type, name, pfile in placeholders:
-                loc = f" ({pfile})" if pfile else ""
-                console.print(f"  - {elem_type}: [bold]{name}[/]{loc}")
+        _print_files_included(doc)
+        console.print(_build_summary_table(doc))
+        _print_placeholders(doc)
 
     except Exception as e:
         error_console.print(f"[bold red]Error:[/] {e}")
@@ -102,37 +173,9 @@ def check(file: Path, no_imports: bool, strict: bool) -> None:
         doc = analyze_file(file, resolve_all_imports=not no_imports)
         messages = validate(doc)
 
-        # Group messages by severity
-        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
-        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
-        infos = [m for m in messages if m.severity == ValidationSeverity.INFO]
-
-        # Print messages
-        for msg in errors:
-            loc = f"{msg.file}:{msg.line}: " if msg.file and msg.line else ""
-            console.print(f"[bold red]error:[/] {loc}{msg.message}")
-
-        for msg in warnings:
-            loc = f"{msg.file}:{msg.line}: " if msg.file and msg.line else ""
-            console.print(f"[bold yellow]warning:[/] {loc}{msg.message}")
-
-        for msg in infos:
-            loc = f"{msg.file}:{msg.line}: " if msg.file and msg.line else ""
-            console.print(f"[dim]info:[/] {loc}{msg.message}")
-
-        # Summary
-        console.print()
-        if errors:
-            console.print(f"[bold red]{len(errors)} error(s)[/]", end="")
-        if warnings:
-            if errors:
-                console.print(", ", end="")
-            console.print(f"[bold yellow]{len(warnings)} warning(s)[/]", end="")
-        if infos:
-            if errors or warnings:
-                console.print(", ", end="")
-            console.print(f"[dim]{len(infos)} info(s)[/]", end="")
-        console.print()
+        errors, warnings, infos = _group_messages(messages)
+        _print_messages(errors, warnings, infos)
+        _print_summary(errors, warnings, infos)
 
         # Exit with error if there are errors (or warnings in strict mode)
         if errors or (strict and warnings):

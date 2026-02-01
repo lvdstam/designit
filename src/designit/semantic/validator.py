@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from designit.model.base import (
     DesignDocument,
@@ -12,12 +12,14 @@ from designit.model.base import (
 
 if TYPE_CHECKING:
     from designit.model.datadict import DataDefinition, TypeRef
+    from designit.model.dfd import DFDModel
+    from designit.model.scd import SCDModel
 
 
 class Validator:
     """Validates design documents for consistency and completeness."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.messages: list[ValidationMessage] = []
 
     def _add_message(
@@ -121,48 +123,70 @@ class Validator:
 
             # Check if element exists and is valid type
             if parent_scd:
-                # Can only refine system
-                if parent_scd.system and parent_scd.system.name == element_name:
-                    pass  # Valid - refining a system
-                elif element_name in parent_scd.externals:
-                    self._error(
-                        f"DFD '{dfd_name}' cannot refine external entity '{element_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        line,
-                    )
-                elif element_name in parent_scd.datastores:
-                    self._error(
-                        f"DFD '{dfd_name}' cannot refine datastore '{element_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        line,
-                    )
-                else:
-                    self._error(
-                        f"Element '{element_name}' not found in SCD '{diagram_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        line,
-                    )
+                self._validate_scd_refinement(dfd_name, dfd, parent_scd, element_name, line)
             elif parent_dfd:
-                # Can only refine process
-                if element_name in parent_dfd.processes:
-                    pass  # Valid - refining a process
-                elif element_name in parent_dfd.datastores:
-                    self._error(
-                        f"DFD '{dfd_name}' cannot refine datastore '{element_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        line,
-                    )
-                else:
-                    self._error(
-                        f"Process '{element_name}' not found in DFD '{diagram_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        line,
-                    )
+                self._validate_dfd_process_refinement(dfd_name, dfd, parent_dfd, element_name, line)
+
+    def _validate_scd_refinement(
+        self,
+        dfd_name: str,
+        dfd: DFDModel,
+        parent_scd: SCDModel,
+        element_name: str,
+        line: int | None,
+    ) -> None:
+        """Validate that a DFD properly refines an SCD system."""
+        diagram_name = parent_scd.name
+        if parent_scd.system and parent_scd.system.name == element_name:
+            pass  # Valid - refining a system
+        elif element_name in parent_scd.externals:
+            self._error(
+                f"DFD '{dfd_name}' cannot refine external entity '{element_name}'",
+                dfd_name,
+                dfd.source_file,
+                line,
+            )
+        elif element_name in parent_scd.datastores:
+            self._error(
+                f"DFD '{dfd_name}' cannot refine datastore '{element_name}'",
+                dfd_name,
+                dfd.source_file,
+                line,
+            )
+        else:
+            self._error(
+                f"Element '{element_name}' not found in SCD '{diagram_name}'",
+                dfd_name,
+                dfd.source_file,
+                line,
+            )
+
+    def _validate_dfd_process_refinement(
+        self,
+        dfd_name: str,
+        dfd: DFDModel,
+        parent_dfd: DFDModel,
+        element_name: str,
+        line: int | None,
+    ) -> None:
+        """Validate that a DFD properly refines a process in another DFD."""
+        diagram_name = parent_dfd.name
+        if element_name in parent_dfd.processes:
+            pass  # Valid - refining a process
+        elif element_name in parent_dfd.datastores:
+            self._error(
+                f"DFD '{dfd_name}' cannot refine datastore '{element_name}'",
+                dfd_name,
+                dfd.source_file,
+                line,
+            )
+        else:
+            self._error(
+                f"Process '{element_name}' not found in DFD '{diagram_name}'",
+                dfd_name,
+                dfd.source_file,
+                line,
+            )
 
     def _validate_dfds(self, doc: DesignDocument) -> None:
         """Validate all DFDs."""
@@ -228,143 +252,164 @@ class Validator:
                 continue
 
             # Get parent flows involving the refined element
-            parent_inbound_flows: dict[str, str] = {}  # flow_name -> direction
-            parent_outbound_flows: dict[str, str] = {}
-            parent_bidirectional_flows: dict[str, str] = {}
-
             if parent_scd:
-                system_name = element_name
-                for flow_name, flow in parent_scd.flows.items():
-                    if flow.target.name == system_name:
-                        # Flow into the system (inbound)
-                        if flow.direction == "bidirectional":
-                            parent_bidirectional_flows[flow_name] = "bidirectional"
-                        else:
-                            parent_inbound_flows[flow_name] = "inbound"
-                    if flow.source.name == system_name:
-                        # Flow out of the system (outbound)
-                        if flow.direction == "bidirectional":
-                            parent_bidirectional_flows[flow_name] = "bidirectional"
-                        else:
-                            parent_outbound_flows[flow_name] = "outbound"
-            elif parent_dfd:
-                process_name = element_name
-                for (flow_name, _flow_type), flow in parent_dfd.flows.items():
-                    if flow.target and flow.target.name == process_name:
-                        parent_inbound_flows[flow_name] = "inbound"
-                    if flow.source and flow.source.name == process_name:
-                        parent_outbound_flows[flow_name] = "outbound"
+                parent_flows = self._get_parent_scd_flows(parent_scd, element_name)
+            else:
+                assert parent_dfd is not None  # Already checked above
+                parent_flows = self._get_parent_dfd_flows(parent_dfd, element_name)
 
-            # Get inbound handler counts from the analyzer (tracks duplicate declarations)
-            inbound_handler_counts: dict[str, list[str]] = getattr(
-                dfd, "_inbound_flow_handlers", {}
-            )
+            # Validate flow directions and coverage
+            self._validate_dfd_flow_directions(dfd, parent_flows)
+            self._validate_dfd_inbound_handlers(dfd, dfd_name, parent_flows)
 
-            # Check for direction mismatches in declared flows
-            for (flow_name, _flow_type), flow in dfd.flows.items():
-                if flow.flow_type == "inbound":
-                    # Check for direction mismatch with parent
-                    if flow_name in parent_outbound_flows:
-                        self._error(
-                            f"Flow '{flow_name}' direction mismatch: declared as inbound but parent has it as outbound",
-                            flow_name,
-                            flow.source_file,
-                            flow.line,
-                        )
-                elif flow.flow_type == "outbound":
-                    # Check for direction mismatch with parent
-                    if flow_name in parent_inbound_flows:
-                        self._error(
-                            f"Flow '{flow_name}' direction mismatch: declared as outbound but parent has it as inbound",
-                            flow_name,
-                            flow.source_file,
-                            flow.line,
-                        )
-                    # Outbound flows can be handled 0+ times, no error needed
+    def _get_parent_scd_flows(
+        self, parent_scd: SCDModel, system_name: str
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+        """Get inbound, outbound, and bidirectional flows for a system in an SCD.
 
-            # Check inbound flows: must be handled exactly once
-            for flow_name in parent_inbound_flows:
-                handlers = inbound_handler_counts.get(flow_name, [])
-                if len(handlers) == 0:
-                    self._error(
-                        f"Inbound flow '{flow_name}' from parent not handled in DFD '{dfd_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        dfd.refines.line if dfd.refines else dfd.line,
-                    )
-                elif len(handlers) > 1:
-                    self._error(
-                        f"Inbound flow '{flow_name}' handled by multiple processes in DFD '{dfd_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        dfd.line,
-                    )
+        Returns:
+            Tuple of (inbound_flows, outbound_flows, bidirectional_flows) dicts.
+        """
+        inbound: dict[str, str] = {}
+        outbound: dict[str, str] = {}
+        bidirectional: dict[str, str] = {}
 
-            # Check bidirectional flows: inbound part must be handled exactly once
-            for flow_name in parent_bidirectional_flows:
-                handlers = inbound_handler_counts.get(flow_name, [])
-                if len(handlers) == 0:
-                    self._error(
-                        f"Inbound flow '{flow_name}' from parent not handled in DFD '{dfd_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        dfd.refines.line if dfd.refines else dfd.line,
-                    )
-                elif len(handlers) > 1:
-                    self._error(
-                        f"Inbound flow '{flow_name}' handled by multiple processes in DFD '{dfd_name}'",
-                        dfd_name,
-                        dfd.source_file,
-                        dfd.line,
-                    )
+        for flow_name, flow in parent_scd.flows.items():
+            if flow.target.name == system_name:
+                if flow.direction == "bidirectional":
+                    bidirectional[flow_name] = "bidirectional"
+                else:
+                    inbound[flow_name] = "inbound"
+            if flow.source.name == system_name:
+                if flow.direction == "bidirectional":
+                    bidirectional[flow_name] = "bidirectional"
+                else:
+                    outbound[flow_name] = "outbound"
+
+        return inbound, outbound, bidirectional
+
+    def _get_parent_dfd_flows(
+        self, parent_dfd: DFDModel, process_name: str
+    ) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+        """Get inbound and outbound flows for a process in a DFD.
+
+        Returns:
+            Tuple of (inbound_flows, outbound_flows, bidirectional_flows) dicts.
+        """
+        inbound: dict[str, str] = {}
+        outbound: dict[str, str] = {}
+
+        for (flow_name, _flow_type), flow in parent_dfd.flows.items():
+            if flow.target and flow.target.name == process_name:
+                inbound[flow_name] = "inbound"
+            if flow.source and flow.source.name == process_name:
+                outbound[flow_name] = "outbound"
+
+        return inbound, outbound, {}
+
+    def _validate_dfd_flow_directions(
+        self,
+        dfd: DFDModel,
+        parent_flows: tuple[dict[str, str], dict[str, str], dict[str, str]],
+    ) -> None:
+        """Validate that DFD flow directions match parent diagram."""
+        parent_inbound, parent_outbound, _ = parent_flows
+
+        for (flow_name, _flow_type), flow in dfd.flows.items():
+            if flow.flow_type == "inbound" and flow_name in parent_outbound:
+                self._error(
+                    f"Flow '{flow_name}' direction mismatch: "
+                    "declared as inbound but parent has it as outbound",
+                    flow_name,
+                    flow.source_file,
+                    flow.line,
+                )
+            elif flow.flow_type == "outbound" and flow_name in parent_inbound:
+                self._error(
+                    f"Flow '{flow_name}' direction mismatch: "
+                    "declared as outbound but parent has it as inbound",
+                    flow_name,
+                    flow.source_file,
+                    flow.line,
+                )
+
+    def _validate_dfd_inbound_handlers(
+        self,
+        dfd: DFDModel,
+        dfd_name: str,
+        parent_flows: tuple[dict[str, str], dict[str, str], dict[str, str]],
+    ) -> None:
+        """Validate that inbound flows are handled exactly once."""
+        parent_inbound, _, parent_bidirectional = parent_flows
+        inbound_handler_counts: dict[str, list[str]] = getattr(dfd, "_inbound_flow_handlers", {})
+
+        # Check inbound and bidirectional flows (both require exactly one handler)
+        for flow_name in list(parent_inbound.keys()) + list(parent_bidirectional.keys()):
+            handlers = inbound_handler_counts.get(flow_name, [])
+            if len(handlers) == 0:
+                self._error(
+                    f"Inbound flow '{flow_name}' from parent not handled in DFD '{dfd_name}'",
+                    dfd_name,
+                    dfd.source_file,
+                    dfd.refines.line if dfd.refines else dfd.line,
+                )
+            elif len(handlers) > 1:
+                self._error(
+                    f"Inbound flow '{flow_name}' handled by multiple processes in DFD '{dfd_name}'",
+                    dfd_name,
+                    dfd.source_file,
+                    dfd.line,
+                )
 
     def _validate_erds(self, doc: DesignDocument) -> None:
         """Validate all ERDs."""
         for erd_name, erd in doc.erds.items():
-            # Check that relationships reference valid entities
-            for rel_name, rel in erd.relationships.items():
-                if rel.source_entity not in erd.entities:
-                    self._error(
-                        f"Relationship '{rel_name}' references "
-                        f"unknown entity '{rel.source_entity}'",
-                        rel_name,
-                        rel.source_file,
-                        rel.line,
-                    )
-                if rel.target_entity not in erd.entities:
-                    self._error(
-                        f"Relationship '{rel_name}' references "
-                        f"unknown entity '{rel.target_entity}'",
-                        rel_name,
-                        rel.source_file,
-                        rel.line,
-                    )
+            self._validate_erd_relationships(erd_name, erd)
+            self._validate_erd_foreign_keys(erd_name, erd)
+            self._validate_erd_primary_keys(erd_name, erd)
 
-            # Check FK references
-            for entity_name, entity in erd.entities.items():
-                for attr_name, attr in entity.attributes.items():
-                    for constraint in attr.constraints:
-                        if (
-                            constraint.target_entity
-                            and constraint.target_entity not in erd.entities
-                        ):
-                            self._error(
-                                f"FK in '{entity_name}.{attr_name}' references "
-                                f"unknown entity '{constraint.target_entity}'",
-                                f"{entity_name}.{attr_name}",
-                                entity.source_file,
-                                entity.line,
-                            )
+    def _validate_erd_relationships(self, erd_name: str, erd: Any) -> None:
+        """Validate that relationships reference valid entities."""
+        for rel_name, rel in erd.relationships.items():
+            if rel.source_entity not in erd.entities:
+                self._error(
+                    f"Relationship '{rel_name}' references unknown entity '{rel.source_entity}'",
+                    rel_name,
+                    rel.source_file,
+                    rel.line,
+                )
+            if rel.target_entity not in erd.entities:
+                self._error(
+                    f"Relationship '{rel_name}' references unknown entity '{rel.target_entity}'",
+                    rel_name,
+                    rel.source_file,
+                    rel.line,
+                )
 
-            # Check for entities without primary key
-            for entity_name, entity in erd.entities.items():
-                if not entity.is_placeholder and not entity.primary_keys:
-                    self._warning(
-                        f"Entity '{entity_name}' has no primary key defined",
-                        entity_name,
-                        entity.source_file,
-                        entity.line,
-                    )
+    def _validate_erd_foreign_keys(self, erd_name: str, erd: Any) -> None:
+        """Validate foreign key references in entities."""
+        for entity_name, entity in erd.entities.items():
+            for attr_name, attr in entity.attributes.items():
+                for constraint in attr.constraints:
+                    if constraint.target_entity and constraint.target_entity not in erd.entities:
+                        self._error(
+                            f"FK in '{entity_name}.{attr_name}' references "
+                            f"unknown entity '{constraint.target_entity}'",
+                            f"{entity_name}.{attr_name}",
+                            entity.source_file,
+                            entity.line,
+                        )
+
+    def _validate_erd_primary_keys(self, erd_name: str, erd: Any) -> None:
+        """Check for entities without primary key."""
+        for entity_name, entity in erd.entities.items():
+            if not entity.is_placeholder and not entity.primary_keys:
+                self._warning(
+                    f"Entity '{entity_name}' has no primary key defined",
+                    entity_name,
+                    entity.source_file,
+                    entity.line,
+                )
 
     def _validate_stds(self, doc: DesignDocument) -> None:
         """Validate all STDs."""
@@ -434,63 +479,73 @@ class Validator:
     def _validate_scds(self, doc: DesignDocument) -> None:
         """Validate all SCDs."""
         for scd_name, scd in doc.scds.items():
-            # Check that exactly one system is defined
-            if not scd.system:
+            self._validate_scd_system(scd_name, scd)
+            all_elements = self._collect_scd_elements(scd)
+            self._validate_scd_flows(scd_name, scd, all_elements)
+            self._validate_scd_orphan_elements(scd_name, scd)
+
+    def _validate_scd_system(self, scd_name: str, scd: Any) -> None:
+        """Check that exactly one system is defined."""
+        if not scd.system:
+            self._error(
+                f"SCD '{scd_name}' must have exactly one system declaration",
+                scd_name,
+                scd.source_file,
+            )
+
+    def _collect_scd_elements(self, scd: Any) -> set[str]:
+        """Collect all valid element names in an SCD."""
+        all_elements: set[str] = set()
+        if scd.system:
+            all_elements.add(scd.system.name)
+        all_elements.update(scd.externals.keys())
+        all_elements.update(scd.datastores.keys())
+        return all_elements
+
+    def _validate_scd_flows(self, scd_name: str, scd: Any, all_elements: set[str]) -> None:
+        """Validate flows reference valid elements and involve the system."""
+        for flow_name, flow in scd.flows.items():
+            if flow.source.name not in all_elements:
                 self._error(
-                    f"SCD '{scd_name}' must have exactly one system declaration",
-                    scd_name,
-                    scd.source_file,
+                    f"Flow '{flow_name}' references unknown source '{flow.source.name}'",
+                    flow_name,
+                    flow.source_file,
+                    flow.line,
+                )
+            if flow.target.name not in all_elements:
+                self._error(
+                    f"Flow '{flow_name}' references unknown target '{flow.target.name}'",
+                    flow_name,
+                    flow.source_file,
+                    flow.line,
                 )
 
-            # Collect all valid element names
-            all_elements: set[str] = set()
+            # Check that flows involve the system
             if scd.system:
-                all_elements.add(scd.system.name)
-            all_elements.update(scd.externals.keys())
-            all_elements.update(scd.datastores.keys())
-
-            # Check that flows reference valid elements
-            for flow_name, flow in scd.flows.items():
-                if flow.source.name not in all_elements:
-                    self._error(
-                        f"Flow '{flow_name}' references unknown source '{flow.source.name}'",
-                        flow_name,
-                        flow.source_file,
-                        flow.line,
-                    )
-                if flow.target.name not in all_elements:
-                    self._error(
-                        f"Flow '{flow_name}' references unknown target '{flow.target.name}'",
-                        flow_name,
-                        flow.source_file,
-                        flow.line,
-                    )
-
-                # Check that flows involve the system
-                if scd.system:
-                    system_name = scd.system.name
-                    if flow.source.name != system_name and flow.target.name != system_name:
-                        self._warning(
-                            f"Flow '{flow_name}' does not involve the system '{system_name}'",
-                            flow_name,
-                            flow.source_file,
-                            flow.line,
-                        )
-
-            # Check for orphan elements (no flows in or out)
-            elements_with_flows: set[str] = set()
-            for flow in scd.flows.values():
-                elements_with_flows.add(flow.source.name)
-                elements_with_flows.add(flow.target.name)
-
-            for element in scd.all_elements():
-                if element.name not in elements_with_flows and not element.is_placeholder:
+                system_name = scd.system.name
+                if flow.source.name != system_name and flow.target.name != system_name:
                     self._warning(
-                        f"Element '{element.name}' has no data flows",
-                        element.name,
-                        element.source_file,
-                        element.line,
+                        f"Flow '{flow_name}' does not involve the system '{system_name}'",
+                        flow_name,
+                        flow.source_file,
+                        flow.line,
                     )
+
+    def _validate_scd_orphan_elements(self, scd_name: str, scd: Any) -> None:
+        """Check for elements with no flows."""
+        elements_with_flows: set[str] = set()
+        for flow in scd.flows.values():
+            elements_with_flows.add(flow.source.name)
+            elements_with_flows.add(flow.target.name)
+
+        for element in scd.all_elements():
+            if element.name not in elements_with_flows and not element.is_placeholder:
+                self._warning(
+                    f"Element '{element.name}' has no data flows",
+                    element.name,
+                    element.source_file,
+                    element.line,
+                )
 
     def _validate_datadict(self, doc: DesignDocument) -> None:
         """Validate the data dictionary.
@@ -518,11 +573,6 @@ class Validator:
         # REQ-SEM-066: Check for namespace names that shadow global type names
         self._validate_namespace_shadowing(doc)
 
-        # Build a map of simple names to their namespaces for cross-reference checking
-        type_namespaces: dict[str, str | None] = {}  # simple_name -> namespace (None = anonymous)
-        for qualified_name, defn in dd.definitions.items():
-            type_namespaces[qualified_name] = defn.namespace
-
         for def_name, defn in dd.definitions.items():
             if defn.is_placeholder:
                 continue
@@ -530,60 +580,77 @@ class Validator:
             # Check type references with namespace-first resolution
             referenced = dd.get_all_referenced_types(def_name)
             for type_ref in referenced:
-                # Resolve the type reference using namespace-first lookup
-                resolved_name = self._resolve_type_ref(type_ref, defn.namespace, dd.definitions)
+                self._validate_type_reference(dd, def_name, defn, type_ref, builtin_types)
 
-                if resolved_name is None and type_ref.name not in builtin_types:
-                    # Check if it's a string literal (for unions) - these are preserved as strings
-                    if not (type_ref.name.startswith('"') or type_ref.name.startswith("'")):
-                        self._warning(
-                            f"Type '{def_name}' references undefined type "
-                            f"'{type_ref.qualified_name}'",
-                            def_name,
-                            defn.source_file,
-                            defn.line,
-                        )
-                    continue
+    def _validate_type_reference(
+        self,
+        dd: Any,
+        def_name: str,
+        defn: DataDefinition,
+        type_ref: TypeRef,
+        builtin_types: set[str],
+    ) -> None:
+        """Validate a single type reference in a definition."""
+        # Resolve the type reference using namespace-first lookup
+        resolved_name = self._resolve_type_ref(type_ref, defn.namespace, dd.definitions)
 
-                # REQ-SEM-064: Cross-namespace reference restriction
-                # Types in named datadict can only reference same namespace or anonymous types
-                if defn.namespace and resolved_name:
-                    if type_ref.is_qualified:
-                        # Qualified reference like ServiceA.Type - check if it's a different namespace
-                        if type_ref.namespace != defn.namespace:
-                            self._error(
-                                f"Type '{def_name}' in namespace '{defn.namespace}' "
-                                f"cannot reference type '{type_ref.qualified_name}' from "
-                                f"different namespace '{type_ref.namespace}'. Types can only "
-                                f"reference same namespace or anonymous types.",
-                                def_name,
-                                defn.source_file,
-                                defn.line,
-                            )
-                    else:
-                        # Simple reference - resolved via namespace-first lookup
-                        # Check if it resolved to a different namespace
-                        if resolved_name in dd.definitions:
-                            ref_defn = dd.definitions[resolved_name]
-                            if (
-                                ref_defn.namespace is not None
-                                and ref_defn.namespace != defn.namespace
-                            ):
-                                self._error(
-                                    f"Type '{def_name}' in namespace '{defn.namespace}' "
-                                    f"cannot reference type '{resolved_name}' from different "
-                                    f"namespace '{ref_defn.namespace}'. Types can only "
-                                    f"reference same namespace or anonymous types.",
-                                    def_name,
-                                    defn.source_file,
-                                    defn.line,
-                                )
+        if resolved_name is None and type_ref.name not in builtin_types:
+            # Check if it's a string literal (for unions) - these are preserved as strings
+            if not (type_ref.name.startswith('"') or type_ref.name.startswith("'")):
+                self._warning(
+                    f"Type '{def_name}' references undefined type '{type_ref.qualified_name}'",
+                    def_name,
+                    defn.source_file,
+                    defn.line,
+                )
+            return
+
+        # REQ-SEM-064: Cross-namespace reference restriction
+        if defn.namespace and resolved_name:
+            self._validate_cross_namespace_ref(dd, def_name, defn, type_ref, resolved_name)
+
+    def _validate_cross_namespace_ref(
+        self,
+        dd: Any,
+        def_name: str,
+        defn: DataDefinition,
+        type_ref: TypeRef,
+        resolved_name: str,
+    ) -> None:
+        """Validate cross-namespace reference restrictions."""
+        if type_ref.is_qualified:
+            # Qualified reference like ServiceA.Type - check if it's a different namespace
+            if type_ref.namespace != defn.namespace:
+                self._error(
+                    f"Type '{def_name}' in namespace '{defn.namespace}' "
+                    f"cannot reference type '{type_ref.qualified_name}' from "
+                    f"different namespace '{type_ref.namespace}'. Types can only "
+                    f"reference same namespace or anonymous types.",
+                    def_name,
+                    defn.source_file,
+                    defn.line,
+                )
+        else:
+            # Simple reference - resolved via namespace-first lookup
+            # Check if it resolved to a different namespace
+            if resolved_name in dd.definitions:
+                ref_defn = dd.definitions[resolved_name]
+                if ref_defn.namespace is not None and ref_defn.namespace != defn.namespace:
+                    self._error(
+                        f"Type '{def_name}' in namespace '{defn.namespace}' "
+                        f"cannot reference type '{resolved_name}' from different "
+                        f"namespace '{ref_defn.namespace}'. Types can only "
+                        f"reference same namespace or anonymous types.",
+                        def_name,
+                        defn.source_file,
+                        defn.line,
+                    )
 
     def _resolve_type_ref(
         self,
-        type_ref: "TypeRef",
+        type_ref: TypeRef,
         current_namespace: str | None,
-        definitions: dict[str, "DataDefinition"],
+        definitions: dict[str, DataDefinition],
     ) -> str | None:
         """Resolve a type reference to its qualified name, or None if not found.
 
@@ -635,13 +702,13 @@ class Validator:
         dd = doc.data_dictionary
 
         # Collect global (anonymous) type names
-        global_types: dict[str, "DataDefinition"] = {}
+        global_types: dict[str, DataDefinition] = {}
         for name, defn in dd.definitions.items():
             if defn.namespace is None:
                 global_types[name] = defn
 
         # Collect all namespace names and find one type per namespace for location info
-        namespace_info: dict[str, "DataDefinition"] = {}  # namespace -> first definition in it
+        namespace_info: dict[str, DataDefinition] = {}  # namespace -> first definition in it
         for defn in dd.definitions.values():
             if defn.namespace and defn.namespace not in namespace_info:
                 namespace_info[defn.namespace] = defn
@@ -668,84 +735,82 @@ class Validator:
         - REQ-SEM-062: DFD flow types must be in data dictionary
         - REQ-SEM-063: Namespaced types must be qualified in flows
         """
-        # Collect all data types from data dictionary
+        data_types, namespaced_simple_names = self._build_datadict_type_maps(doc)
+        self._validate_dfd_flow_types(doc, data_types, namespaced_simple_names)
+        self._validate_scd_flow_types(doc, data_types, namespaced_simple_names)
+
+    def _build_datadict_type_maps(
+        self, doc: DesignDocument
+    ) -> tuple[set[str], dict[str, list[str]]]:
+        """Build maps of data types for cross-reference validation."""
         data_types: set[str] = set()
-        namespaced_simple_names: dict[str, list[str]] = {}  # simple_name -> [qualified_names]
+        namespaced_simple_names: dict[str, list[str]] = {}
 
         if doc.data_dictionary:
             data_types = set(doc.data_dictionary.definitions.keys())
-            # Build a map of simple names to their namespaced qualified names
             for qualified_name, defn in doc.data_dictionary.definitions.items():
-                if defn.namespace:  # Only track namespaced types
+                if defn.namespace:
                     if defn.name not in namespaced_simple_names:
                         namespaced_simple_names[defn.name] = []
                     namespaced_simple_names[defn.name].append(qualified_name)
 
-        # Check DFD flow types against data dictionary (REQ-SEM-062, REQ-SEM-063)
+        return data_types, namespaced_simple_names
+
+    def _validate_dfd_flow_types(
+        self,
+        doc: DesignDocument,
+        data_types: set[str],
+        namespaced_simple_names: dict[str, list[str]],
+    ) -> None:
+        """Validate DFD flow types against data dictionary."""
         for dfd_name, dfd in doc.dfds.items():
             for flow in dfd.flows.values():
-                # Determine the type name to check
-                if flow.type_ref:
-                    # Flow has explicit type reference
-                    type_name = flow.type_ref.qualified_name
-                else:
-                    # Use flow name as type name (backward compatibility)
-                    type_name = flow.name
+                type_name = flow.type_ref.qualified_name if flow.type_ref else flow.name
+                self._check_flow_type(
+                    flow, type_name, f"DFD '{dfd_name}'", data_types, namespaced_simple_names
+                )
 
-                if type_name not in data_types:
-                    # Check if it's an unqualified reference to a namespaced type
-                    if type_name in namespaced_simple_names:
-                        qualified_options = namespaced_simple_names[type_name]
-                        opts = ", ".join(qualified_options)
-                        self._error(
-                            f"Flow '{flow.name}' in DFD '{dfd_name}' uses unqualified "
-                            f"type '{type_name}' which exists in namespace(s): {opts}. "
-                            f"Use qualified name instead.",
-                            flow.name,
-                            flow.source_file,
-                            flow.line,
-                        )
-                    else:
-                        self._error(
-                            f"Flow '{flow.name}' in DFD '{dfd_name}' is not defined "
-                            f"in data dictionary",
-                            flow.name,
-                            flow.source_file,
-                            flow.line,
-                        )
-
-        # Check SCD flow types against data dictionary (REQ-SEM-061, REQ-SEM-063)
+    def _validate_scd_flow_types(
+        self,
+        doc: DesignDocument,
+        data_types: set[str],
+        namespaced_simple_names: dict[str, list[str]],
+    ) -> None:
+        """Validate SCD flow types against data dictionary."""
         for scd_name, scd in doc.scds.items():
             for flow in scd.flows.values():
-                # Determine the type name to check
-                if flow.type_ref:
-                    # Flow has explicit type reference
-                    type_name = flow.type_ref.qualified_name
-                else:
-                    # Use flow name as type name (backward compatibility)
-                    type_name = flow.name
+                type_name = flow.type_ref.qualified_name if flow.type_ref else flow.name
+                self._check_flow_type(
+                    flow, type_name, f"SCD '{scd_name}'", data_types, namespaced_simple_names
+                )
 
-                if type_name not in data_types:
-                    # Check if it's an unqualified reference to a namespaced type
-                    if type_name in namespaced_simple_names:
-                        qualified_options = namespaced_simple_names[type_name]
-                        opts = ", ".join(qualified_options)
-                        self._error(
-                            f"Flow '{flow.name}' in SCD '{scd_name}' uses unqualified "
-                            f"type '{type_name}' which exists in namespace(s): {opts}. "
-                            f"Use qualified name instead.",
-                            flow.name,
-                            flow.source_file,
-                            flow.line,
-                        )
-                    else:
-                        self._error(
-                            f"Flow '{flow.name}' in SCD '{scd_name}' is not defined "
-                            f"in data dictionary",
-                            flow.name,
-                            flow.source_file,
-                            flow.line,
-                        )
+    def _check_flow_type(
+        self,
+        flow: Any,
+        type_name: str,
+        diagram_desc: str,
+        data_types: set[str],
+        namespaced_simple_names: dict[str, list[str]],
+    ) -> None:
+        """Check if a flow type is defined in the data dictionary."""
+        if type_name not in data_types:
+            if type_name in namespaced_simple_names:
+                opts = ", ".join(namespaced_simple_names[type_name])
+                self._error(
+                    f"Flow '{flow.name}' in {diagram_desc} uses unqualified "
+                    f"type '{type_name}' which exists in namespace(s): {opts}. "
+                    f"Use qualified name instead.",
+                    flow.name,
+                    flow.source_file,
+                    flow.line,
+                )
+            else:
+                self._error(
+                    f"Flow '{flow.name}' in {diagram_desc} is not defined in data dictionary",
+                    flow.name,
+                    flow.source_file,
+                    flow.line,
+                )
 
     def _validate_unique_names(self, doc: DesignDocument) -> None:
         """Validate no duplicate element names across the document.

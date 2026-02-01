@@ -56,7 +56,22 @@ class GraphVizGenerator:
         out.write('  node [fontname="Helvetica"];\n')
         out.write('  edge [fontname="Helvetica"];\n\n')
 
-        # External entities (rectangles)
+        # Write nodes
+        self._write_dfd_externals(dfd, out)
+        self._write_dfd_processes(dfd, out)
+        self._write_dfd_datastores(dfd, out)
+
+        # Detect bidirectional flows and write boundary nodes
+        bidirectional = self._detect_dfd_bidirectional_flows(dfd)
+        self._write_dfd_boundary_nodes(dfd, bidirectional, out)
+
+        # Write flows
+        self._write_dfd_flows(dfd, bidirectional, out)
+
+        out.write("}\n")
+
+    def _write_dfd_externals(self, dfd: DFDModel, out: TextIO) -> None:
+        """Write external entity nodes to DOT output."""
         out.write("  // External Entities\n")
         for name, ext in dfd.externals.items():
             if not self.include_placeholders and ext.is_placeholder:
@@ -67,7 +82,8 @@ class GraphVizGenerator:
                 label += f"\\n({self._escape(ext.description)})"
             out.write(f'  "{name}" [shape=box label="{label}" {style}];\n')
 
-        # Processes (circles/ellipses)
+    def _write_dfd_processes(self, dfd: DFDModel, out: TextIO) -> None:
+        """Write process nodes to DOT output."""
         out.write("\n  // Processes\n")
         for name, proc in dfd.processes.items():
             if not self.include_placeholders and proc.is_placeholder:
@@ -78,7 +94,8 @@ class GraphVizGenerator:
                 label += f"\\n{self._escape(proc.description)}"
             out.write(f'  "{name}" [shape=ellipse label="{label}" {style}];\n')
 
-        # Data stores (open-ended rectangles, approximated with cylinder)
+    def _write_dfd_datastores(self, dfd: DFDModel, out: TextIO) -> None:
+        """Write datastore nodes to DOT output."""
         out.write("\n  // Data Stores\n")
         for name, ds in dfd.datastores.items():
             if not self.include_placeholders and ds.is_placeholder:
@@ -89,8 +106,13 @@ class GraphVizGenerator:
                 label += f"\\n{self._escape(ds.description)}"
             out.write(f'  "{name}" [shape=cylinder label="{label}" {style}];\n')
 
-        # Detect bidirectional boundary flows (same process handles both in and out)
-        bidirectional_flows: dict[str, str] = {}
+    def _detect_dfd_bidirectional_flows(self, dfd: DFDModel) -> dict[str, str]:
+        """Detect bidirectional boundary flows.
+
+        Returns:
+            Dict mapping flow_name to process_name for flows where the same
+            process handles both inbound and outbound directions.
+        """
         inbound_targets: dict[str, str] = {}
         outbound_sources: dict[str, str] = {}
 
@@ -100,51 +122,60 @@ class GraphVizGenerator:
             elif flow_type == "outbound" and flow.source:
                 outbound_sources[flow_name] = flow.source.name
 
-        for flow_name in inbound_targets:
-            if flow_name in outbound_sources:
-                if inbound_targets[flow_name] == outbound_sources[flow_name]:
-                    bidirectional_flows[flow_name] = inbound_targets[flow_name]
+        # Find flows where same process handles both directions
+        bidirectional: dict[str, str] = {}
+        for flow_name, target in inbound_targets.items():
+            if flow_name in outbound_sources and outbound_sources[flow_name] == target:
+                bidirectional[flow_name] = target
 
-        # Boundary nodes for boundary flows (invisible point markers)
+        return bidirectional
+
+    def _write_dfd_boundary_nodes(
+        self, dfd: DFDModel, bidirectional: dict[str, str], out: TextIO
+    ) -> None:
+        """Write boundary marker nodes for boundary flows."""
         boundary_nodes: set[str] = set()
         for (flow_name, flow_type), flow in dfd.flows.items():
-            if flow_type in ("inbound", "outbound"):
-                # Skip outbound if it's part of a bidirectional pair (handled with inbound)
-                if flow_name in bidirectional_flows and flow_type == "outbound":
-                    continue
-                boundary_id = f"_boundary_{flow_name}"
-                if boundary_id not in boundary_nodes:
-                    boundary_nodes.add(boundary_id)
-                    out.write(f'  "{boundary_id}" [shape=point label="" width=0.15];\n')
+            if flow_type not in ("inbound", "outbound"):
+                continue
+            # Skip outbound if it's part of a bidirectional pair (handled with inbound)
+            if flow_name in bidirectional and flow_type == "outbound":
+                continue
+            boundary_id = f"_boundary_{flow_name}"
+            if boundary_id not in boundary_nodes:
+                boundary_nodes.add(boundary_id)
+                out.write(f'  "{boundary_id}" [shape=point label="" width=0.15];\n')
 
-        # Data flows (edges)
+    def _write_dfd_flows(self, dfd: DFDModel, bidirectional: dict[str, str], out: TextIO) -> None:
+        """Write data flow edges to DOT output."""
         out.write("\n  // Data Flows\n")
         rendered_bidirectional: set[str] = set()
         for (flow_name, flow_type), flow in dfd.flows.items():
             label = self._escape(flow_name)
 
-            # Handle bidirectional case
-            if flow_name in bidirectional_flows:
+            if flow_name in bidirectional:
                 if flow_name in rendered_bidirectional:
                     continue
                 rendered_bidirectional.add(flow_name)
                 boundary_id = f"_boundary_{flow_name}"
-                process_name = bidirectional_flows[flow_name]
+                process_name = bidirectional[flow_name]
                 out.write(f'  "{boundary_id}" -> "{process_name}" [label="{label}" dir=both];\n')
             elif flow_type == "inbound":
+                assert flow.target is not None, "Inbound flow must have a target"
                 source_id = f"_boundary_{flow_name}"
                 target_id = flow.target.name
                 out.write(f'  "{source_id}" -> "{target_id}" [label="{label}"];\n')
             elif flow_type == "outbound":
+                assert flow.source is not None, "Outbound flow must have a source"
                 source_id = flow.source.name
                 target_id = f"_boundary_{flow_name}"
                 out.write(f'  "{source_id}" -> "{target_id}" [label="{label}"];\n')
             else:  # internal
+                assert flow.source is not None, "Internal flow must have a source"
+                assert flow.target is not None, "Internal flow must have a target"
                 source_id = flow.source.name
                 target_id = flow.target.name
                 out.write(f'  "{source_id}" -> "{target_id}" [label="{label}"];\n')
-
-        out.write("}\n")
 
     # ============================================
     # ERD Generation
@@ -240,7 +271,14 @@ class GraphVizGenerator:
             out.write("  __start__ [shape=point width=0.2];\n")
             out.write(f'  __start__ -> "{std.initial_state}";\n\n')
 
-        # States (rounded rectangles)
+        # States and transitions
+        self._write_std_states(std, out)
+        self._write_std_transitions(std, out)
+
+        out.write("}\n")
+
+    def _write_std_states(self, std: STDModel, out: TextIO) -> None:
+        """Write state nodes to DOT output."""
         out.write("  // States\n")
         for name, state in std.states.items():
             if not self.include_placeholders and state.is_placeholder:
@@ -258,10 +296,10 @@ class GraphVizGenerator:
             shape = "doublecircle" if state.is_final else "ellipse"
             out.write(f'  "{name}" [shape={shape} label="{label}" {style}];\n')
 
-        # Transitions (edges)
+    def _write_std_transitions(self, std: STDModel, out: TextIO) -> None:
+        """Write transition edges to DOT output."""
         out.write("\n  // Transitions\n")
         for name, trans in std.transitions.items():
-            # Build transition label: trigger[guard]/action
             parts = []
             if trans.trigger:
                 parts.append(self._escape(trans.trigger))
@@ -272,8 +310,6 @@ class GraphVizGenerator:
             label = "".join(parts) if parts else self._escape(name)
 
             out.write(f'  "{trans.source_state}" -> "{trans.target_state}" [label="{label}"];\n')
-
-        out.write("}\n")
 
     # ============================================
     # Structure Chart Generation
@@ -348,31 +384,41 @@ class GraphVizGenerator:
     def _write_scd(self, scd: SCDModel, out: TextIO) -> None:
         """Write SCD to DOT format with radial layout."""
         out.write(f'digraph "{self._escape(scd.name)}" {{\n')
-        # Use neato layout for radial distribution around centered system
         out.write("  layout=neato;\n")
         out.write("  overlap=false;\n")
         out.write("  splines=true;\n")
         out.write('  node [fontname="Helvetica"];\n')
         out.write('  edge [fontname="Helvetica", fontsize=10];\n\n')
 
-        # System (doublecircle, pinned at center)
-        if scd.system:
-            out.write("  // System (centered)\n")
-            sys = scd.system
-            if not self.include_placeholders and sys.is_placeholder:
-                pass
-            else:
-                label = self._escape(sys.name)
-                if sys.description:
-                    label += f"\\n{self._escape(sys.description)}"
-                # Pin at center with pos="0,0!", use doublecircle shape
-                if sys.is_placeholder:
-                    style = 'pos="0,0!" style="dashed,filled" fillcolor=lightgray'
-                else:
-                    style = 'pos="0,0!" style=filled fillcolor=lightyellow'
-                out.write(f'  "{sys.name}" [shape=doublecircle label="{label}" {style}];\n')
+        # Write nodes
+        self._write_scd_system(scd, out)
+        self._write_scd_externals(scd, out)
+        self._write_scd_datastores(scd, out)
 
-        # External entities (rectangles)
+        # Write flows
+        self._write_scd_flows(scd, out)
+
+        out.write("}\n")
+
+    def _write_scd_system(self, scd: SCDModel, out: TextIO) -> None:
+        """Write system node to DOT output."""
+        if not scd.system:
+            return
+        out.write("  // System (centered)\n")
+        sys = scd.system
+        if not self.include_placeholders and sys.is_placeholder:
+            return
+        label = self._escape(sys.name)
+        if sys.description:
+            label += f"\\n{self._escape(sys.description)}"
+        if sys.is_placeholder:
+            style = 'pos="0,0!" style="dashed,filled" fillcolor=lightgray'
+        else:
+            style = 'pos="0,0!" style=filled fillcolor=lightyellow'
+        out.write(f'  "{sys.name}" [shape=doublecircle label="{label}" {style}];\n')
+
+    def _write_scd_externals(self, scd: SCDModel, out: TextIO) -> None:
+        """Write external entity nodes to DOT output."""
         out.write("\n  // External Entities\n")
         for name, ext in scd.externals.items():
             if not self.include_placeholders and ext.is_placeholder:
@@ -383,7 +429,8 @@ class GraphVizGenerator:
                 label += f"\\n{self._escape(ext.description)}"
             out.write(f'  "{name}" [shape=box label="{label}" {style}];\n')
 
-        # Data stores (cylinders)
+    def _write_scd_datastores(self, scd: SCDModel, out: TextIO) -> None:
+        """Write datastore nodes to DOT output."""
         out.write("\n  // Data Stores\n")
         for name, ds in scd.datastores.items():
             if not self.include_placeholders and ds.is_placeholder:
@@ -394,20 +441,17 @@ class GraphVizGenerator:
                 label += f"\\n{self._escape(ds.description)}"
             out.write(f'  "{name}" [shape=cylinder label="{label}" {style}];\n')
 
-        # Data flows (edges with direction)
+    def _write_scd_flows(self, scd: SCDModel, out: TextIO) -> None:
+        """Write flow edges to DOT output."""
         out.write("\n  // Data Flows\n")
         for name, flow in scd.flows.items():
             label = self._escape(name)
             if flow.direction == "bidirectional":
-                # Bidirectional: arrows on both ends
                 out.write(
                     f'  "{flow.source.name}" -> "{flow.target.name}" [label="{label}" dir=both];\n'
                 )
             else:
-                # Unidirectional
                 out.write(f'  "{flow.source.name}" -> "{flow.target.name}" [label="{label}"];\n')
-
-        out.write("}\n")
 
     # ============================================
     # Full Document Generation

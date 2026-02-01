@@ -56,7 +56,24 @@ class MermaidGenerator:
         out.write(f"---\ntitle: {dfd.name}\n---\n")
         out.write("flowchart TB\n")
 
-        # External entities (rectangles)
+        # Write nodes
+        self._write_dfd_externals(dfd, out)
+        self._write_dfd_processes(dfd, out)
+        self._write_dfd_datastores(dfd, out)
+
+        # Detect bidirectional flows and write boundary nodes
+        bidirectional = self._detect_dfd_bidirectional_flows(dfd)
+        boundary_nodes = self._write_dfd_boundary_nodes(dfd, bidirectional, out)
+
+        # Write flows
+        out.write("\n")
+        self._write_dfd_flows(dfd, bidirectional, out)
+
+        # Write placeholder styles and boundary class
+        self._write_dfd_styles(dfd, boundary_nodes, out)
+
+    def _write_dfd_externals(self, dfd: DFDModel, out: TextIO) -> None:
+        """Write external entity nodes to Mermaid output."""
         for name, ext in dfd.externals.items():
             if not self.include_placeholders and ext.is_placeholder:
                 continue
@@ -66,7 +83,8 @@ class MermaidGenerator:
                 label += f"<br/><i>{self._escape(ext.description)}</i>"
             out.write(f'    {safe_id}["{label}"]\n')
 
-        # Processes (rounded rectangles)
+    def _write_dfd_processes(self, dfd: DFDModel, out: TextIO) -> None:
+        """Write process nodes to Mermaid output."""
         for name, proc in dfd.processes.items():
             if not self.include_placeholders and proc.is_placeholder:
                 continue
@@ -76,7 +94,8 @@ class MermaidGenerator:
                 label += f"<br/>{self._escape(proc.description)}"
             out.write(f'    {safe_id}("{label}")\n')
 
-        # Data stores (cylinders)
+    def _write_dfd_datastores(self, dfd: DFDModel, out: TextIO) -> None:
+        """Write datastore nodes to Mermaid output."""
         for name, ds in dfd.datastores.items():
             if not self.include_placeholders and ds.is_placeholder:
                 continue
@@ -86,11 +105,15 @@ class MermaidGenerator:
                 label += f"<br/>{self._escape(ds.description)}"
             out.write(f'    {safe_id}[("{label}")]\n')
 
-        # Detect bidirectional boundary flows (same process handles both in and out)
-        # Key: flow_name -> process_name (if same process for both directions)
-        bidirectional_flows: dict[str, str] = {}
-        inbound_targets: dict[str, str] = {}  # flow_name -> target process
-        outbound_sources: dict[str, str] = {}  # flow_name -> source process
+    def _detect_dfd_bidirectional_flows(self, dfd: DFDModel) -> dict[str, str]:
+        """Detect bidirectional boundary flows.
+
+        Returns:
+            Dict mapping flow_name to process_name for flows where the same
+            process handles both inbound and outbound directions.
+        """
+        inbound_targets: dict[str, str] = {}
+        outbound_sources: dict[str, str] = {}
 
         for (flow_name, flow_type), flow in dfd.flows.items():
             if flow_type == "inbound" and flow.target:
@@ -99,71 +122,87 @@ class MermaidGenerator:
                 outbound_sources[flow_name] = flow.source.name
 
         # Find flows where same process handles both directions
-        for flow_name in inbound_targets:
-            if flow_name in outbound_sources:
-                if inbound_targets[flow_name] == outbound_sources[flow_name]:
-                    bidirectional_flows[flow_name] = inbound_targets[flow_name]
+        bidirectional: dict[str, str] = {}
+        for flow_name, target in inbound_targets.items():
+            if flow_name in outbound_sources and outbound_sources[flow_name] == target:
+                bidirectional[flow_name] = target
 
-        # Boundary nodes for boundary flows (invisible markers)
-        # Only create one node for bidirectional flows
+        return bidirectional
+
+    def _write_dfd_boundary_nodes(
+        self, dfd: DFDModel, bidirectional: dict[str, str], out: TextIO
+    ) -> set[str]:
+        """Write boundary marker nodes for boundary flows.
+
+        Returns:
+            Set of boundary node IDs that were written.
+        """
         boundary_nodes: set[str] = set()
         for (flow_name, flow_type), flow in dfd.flows.items():
-            if flow_type in ("inbound", "outbound"):
-                # Skip if this is part of a bidirectional pair and we're on the outbound
-                # (we'll handle it with the inbound)
-                if flow_name in bidirectional_flows and flow_type == "outbound":
-                    continue
-                boundary_id = f"_boundary_{self._safe_id(flow_name)}"
-                if boundary_id not in boundary_nodes:
-                    boundary_nodes.add(boundary_id)
-                    out.write(f"    {boundary_id}(( )):::boundary\n")
+            if flow_type not in ("inbound", "outbound"):
+                continue
+            # Skip outbound if it's part of a bidirectional pair (handled with inbound)
+            if flow_name in bidirectional and flow_type == "outbound":
+                continue
+            boundary_id = f"_boundary_{self._safe_id(flow_name)}"
+            if boundary_id not in boundary_nodes:
+                boundary_nodes.add(boundary_id)
+                out.write(f"    {boundary_id}(( )):::boundary\n")
+        return boundary_nodes
 
-        # Data flows (edges)
-        out.write("\n")
+    def _write_dfd_flows(self, dfd: DFDModel, bidirectional: dict[str, str], out: TextIO) -> None:
+        """Write data flow edges to Mermaid output."""
         rendered_bidirectional: set[str] = set()
         for (flow_name, flow_type), flow in dfd.flows.items():
             label = self._escape(flow_name)
 
-            # Handle bidirectional case
-            if flow_name in bidirectional_flows:
+            if flow_name in bidirectional:
                 if flow_name in rendered_bidirectional:
-                    continue  # Already rendered this bidirectional flow
+                    continue
                 rendered_bidirectional.add(flow_name)
                 boundary_id = f"_boundary_{self._safe_id(flow_name)}"
-                process_id = self._safe_id(bidirectional_flows[flow_name])
+                process_id = self._safe_id(bidirectional[flow_name])
                 out.write(f'    {boundary_id} <-->|"{label}"| {process_id}\n')
             elif flow_type == "inbound":
+                assert flow.target is not None, "Inbound flow must have a target"
                 source_id = f"_boundary_{self._safe_id(flow_name)}"
                 target_id = self._safe_id(flow.target.name)
                 out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
             elif flow_type == "outbound":
+                assert flow.source is not None, "Outbound flow must have a source"
                 source_id = self._safe_id(flow.source.name)
                 target_id = f"_boundary_{self._safe_id(flow_name)}"
                 out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
             else:  # internal
+                assert flow.source is not None, "Internal flow must have a source"
+                assert flow.target is not None, "Internal flow must have a target"
                 source_id = self._safe_id(flow.source.name)
                 target_id = self._safe_id(flow.target.name)
                 out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
 
-        # Style placeholders
-        if self.include_placeholders:
-            placeholder_ids = []
-            for name, ext in dfd.externals.items():
-                if ext.is_placeholder:
-                    placeholder_ids.append(self._safe_id(name))
-            for name, proc in dfd.processes.items():
-                if proc.is_placeholder:
-                    placeholder_ids.append(self._safe_id(name))
-            for name, ds in dfd.datastores.items():
-                if ds.is_placeholder:
-                    placeholder_ids.append(self._safe_id(name))
+    def _collect_dfd_placeholder_ids(self, dfd: DFDModel) -> list[str]:
+        """Collect IDs of all placeholder elements in a DFD."""
+        placeholder_ids: list[str] = []
+        for name, ext in dfd.externals.items():
+            if ext.is_placeholder:
+                placeholder_ids.append(self._safe_id(name))
+        for name, proc in dfd.processes.items():
+            if proc.is_placeholder:
+                placeholder_ids.append(self._safe_id(name))
+        for name, ds in dfd.datastores.items():
+            if ds.is_placeholder:
+                placeholder_ids.append(self._safe_id(name))
+        return placeholder_ids
 
+    def _write_dfd_styles(self, dfd: DFDModel, boundary_nodes: set[str], out: TextIO) -> None:
+        """Write placeholder styles and boundary class definition."""
+        if self.include_placeholders:
+            placeholder_ids = self._collect_dfd_placeholder_ids(dfd)
             if placeholder_ids:
                 out.write("\n")
                 for pid in placeholder_ids:
                     out.write(f"    style {pid} stroke-dasharray: 5 5\n")
 
-        # Add boundary class definition if we have boundary nodes
         if boundary_nodes:
             out.write("\n    classDef boundary fill:none,stroke:#666,stroke-dasharray:3\n")
 
@@ -273,14 +312,25 @@ class MermaidGenerator:
         if std.initial_state:
             out.write(f"    [*] --> {self._safe_id(std.initial_state)}\n")
 
-        # States with descriptions
+        # States
+        self._write_std_states(std, out)
+
+        # Transitions
+        out.write("\n")
+        self._write_std_transitions(std, out)
+
+    def _write_std_states(self, std: STDModel, out: TextIO) -> None:
+        """Write state nodes to Mermaid output."""
         for name, state in std.states.items():
             if not self.include_placeholders and state.is_placeholder:
                 continue
 
             safe_id = self._safe_id(name)
+            has_details = (
+                state.description or state.entry_action or state.exit_action or state.is_placeholder
+            )
 
-            if state.description or state.entry_action or state.exit_action or state.is_placeholder:
+            if has_details:
                 out.write(f"    state {safe_id} {{\n")
                 if state.description:
                     out.write(f"        {safe_id}: {self._escape(state.description)}\n")
@@ -295,8 +345,8 @@ class MermaidGenerator:
             if state.is_final:
                 out.write(f"    {safe_id} --> [*]\n")
 
-        # Transitions
-        out.write("\n")
+    def _write_std_transitions(self, std: STDModel, out: TextIO) -> None:
+        """Write transition edges to Mermaid output."""
         for name, trans in std.transitions.items():
             source_id = self._safe_id(trans.source_state)
             target_id = self._safe_id(trans.target_state)
@@ -335,7 +385,12 @@ class MermaidGenerator:
         out.write(f"---\ntitle: {structure.name}\n---\n")
         out.write("flowchart TB\n")
 
-        # Modules (boxes)
+        self._write_structure_modules(structure, out)
+        self._write_structure_calls(structure, out)
+        self._write_structure_styles(structure, out)
+
+    def _write_structure_modules(self, structure: StructureModel, out: TextIO) -> None:
+        """Write module nodes for structure chart."""
         for name, module in structure.modules.items():
             if not self.include_placeholders and module.is_placeholder:
                 continue
@@ -347,7 +402,8 @@ class MermaidGenerator:
 
             out.write(f'    {safe_id}["{label}"]\n')
 
-        # Calls (edges)
+    def _write_structure_calls(self, structure: StructureModel, out: TextIO) -> None:
+        """Write call edges for structure chart."""
         out.write("\n")
         for name, module in structure.modules.items():
             source_id = self._safe_id(name)
@@ -367,7 +423,8 @@ class MermaidGenerator:
                 else:
                     out.write(f"    {source_id} --> {target_id}\n")
 
-        # Style placeholders
+    def _write_structure_styles(self, structure: StructureModel, out: TextIO) -> None:
+        """Write placeholder styles for structure chart."""
         if self.include_placeholders:
             placeholder_ids = [
                 self._safe_id(name)
@@ -399,23 +456,35 @@ class MermaidGenerator:
     def _write_scd(self, scd: SCDModel, out: TextIO) -> None:
         """Write SCD to Mermaid format."""
         out.write(f"---\ntitle: {scd.name}\n---\n")
-        # Use LR (left-to-right) layout with system on left as focal point
         out.write("flowchart LR\n")
 
-        # System (double-bordered box via subgraph or special styling)
-        if scd.system:
-            sys = scd.system
-            if not self.include_placeholders and sys.is_placeholder:
-                pass
-            else:
-                safe_id = self._safe_id(sys.name)
-                label = self._escape(sys.name)
-                if sys.description:
-                    label += f"<br/><i>{self._escape(sys.description)}</i>"
-                # Use double brackets for stadium shape to distinguish system
-                out.write(f'    {safe_id}[["{label}"]]\n')
+        # Write nodes
+        self._write_scd_system(scd, out)
+        self._write_scd_externals(scd, out)
+        self._write_scd_datastores(scd, out)
 
-        # External entities (rectangles)
+        # Write flows
+        out.write("\n")
+        self._write_scd_flows(scd, out)
+
+        # Write styles
+        self._write_scd_styles(scd, out)
+
+    def _write_scd_system(self, scd: SCDModel, out: TextIO) -> None:
+        """Write system node to Mermaid output."""
+        if not scd.system:
+            return
+        sys = scd.system
+        if not self.include_placeholders and sys.is_placeholder:
+            return
+        safe_id = self._safe_id(sys.name)
+        label = self._escape(sys.name)
+        if sys.description:
+            label += f"<br/><i>{self._escape(sys.description)}</i>"
+        out.write(f'    {safe_id}[["{label}"]]\n')
+
+    def _write_scd_externals(self, scd: SCDModel, out: TextIO) -> None:
+        """Write external entity nodes to Mermaid output."""
         for name, ext in scd.externals.items():
             if not self.include_placeholders and ext.is_placeholder:
                 continue
@@ -425,7 +494,8 @@ class MermaidGenerator:
                 label += f"<br/><i>{self._escape(ext.description)}</i>"
             out.write(f'    {safe_id}["{label}"]\n')
 
-        # Data stores (cylinders)
+    def _write_scd_datastores(self, scd: SCDModel, out: TextIO) -> None:
+        """Write datastore nodes to Mermaid output."""
         for name, ds in scd.datastores.items():
             if not self.include_placeholders and ds.is_placeholder:
                 continue
@@ -435,22 +505,21 @@ class MermaidGenerator:
                 label += f"<br/>{self._escape(ds.description)}"
             out.write(f'    {safe_id}[("{label}")]\n')
 
-        # Data flows (edges with direction)
-        out.write("\n")
+    def _write_scd_flows(self, scd: SCDModel, out: TextIO) -> None:
+        """Write flow edges to Mermaid output."""
         for name, flow in scd.flows.items():
             source_id = self._safe_id(flow.source.name)
             target_id = self._safe_id(flow.target.name)
             label = self._escape(name)
 
             if flow.direction == "bidirectional":
-                # Bidirectional arrow
                 out.write(f'    {source_id} <-->|"{label}"| {target_id}\n')
             else:
-                # Unidirectional arrow (source -> target)
                 out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
 
-        # Style placeholders and system
-        placeholder_ids = []
+    def _collect_scd_placeholder_ids(self, scd: SCDModel) -> list[str]:
+        """Collect IDs of all placeholder elements in an SCD."""
+        placeholder_ids: list[str] = []
         if scd.system and scd.system.is_placeholder:
             placeholder_ids.append(self._safe_id(scd.system.name))
         for name, ext in scd.externals.items():
@@ -459,13 +528,17 @@ class MermaidGenerator:
         for name, ds in scd.datastores.items():
             if ds.is_placeholder:
                 placeholder_ids.append(self._safe_id(name))
+        return placeholder_ids
 
-        if self.include_placeholders and placeholder_ids:
-            out.write("\n")
-            for pid in placeholder_ids:
-                out.write(f"    style {pid} stroke-dasharray: 5 5\n")
+    def _write_scd_styles(self, scd: SCDModel, out: TextIO) -> None:
+        """Write placeholder and system styles to Mermaid output."""
+        if self.include_placeholders:
+            placeholder_ids = self._collect_scd_placeholder_ids(scd)
+            if placeholder_ids:
+                out.write("\n")
+                for pid in placeholder_ids:
+                    out.write(f"    style {pid} stroke-dasharray: 5 5\n")
 
-        # Style system with thicker border
         if scd.system:
             out.write(f"\n    style {self._safe_id(scd.system.name)} stroke-width:3px\n")
 
