@@ -667,8 +667,6 @@ class Validator:
         Returns:
             The qualified name of the resolved type, or None if not found.
         """
-        from designit.model.datadict import TypeRef  # Import here to avoid circular import
-
         if type_ref.is_qualified:
             # Qualified reference: look for exact match
             qualified = type_ref.qualified_name
@@ -812,42 +810,89 @@ class Validator:
                     flow.line,
                 )
 
+    def _check_duplicate_name(
+        self,
+        seen_names: dict[str, tuple[str, str, str | None, int | None]],
+        name: str,
+        elem_type: str,
+        diagram_name: str,
+        source_file: str | None,
+        line: int | None,
+    ) -> None:
+        """Check if a name is duplicate and report error if so.
+
+        Args:
+            seen_names: Dict tracking seen names -> (type, diagram, source_file, line).
+            name: The element name to check.
+            elem_type: The type of element (system, external, datastore, process).
+            diagram_name: The name of the diagram containing the element.
+            source_file: The source file of the element.
+            line: The line number of the element.
+        """
+        if name in seen_names:
+            prev_type, prev_diagram, _, _ = seen_names[name]
+            self._error(
+                f"Duplicate element name '{name}': {elem_type} in '{diagram_name}' "
+                f"conflicts with {prev_type} in '{prev_diagram}'",
+                name,
+                source_file,
+                line,
+            )
+        else:
+            seen_names[name] = (elem_type, diagram_name, source_file, line)
+
     def _validate_unique_names(self, doc: DesignDocument) -> None:
         """Validate no duplicate element names across the document.
 
         REQ-SEM-087: No duplicate element names across the import tree.
+        Applies to: systems, externals, datastores, processes.
         """
         # Track seen names with their location info: name -> (type, diagram, source_file, line)
         seen_names: dict[str, tuple[str, str, str | None, int | None]] = {}
 
-        # Collect externals from all SCDs
+        # Collect systems and their elements from all SCDs
         for scd_name, scd in doc.scds.items():
-            for ext_name, ext in scd.externals.items():
-                if ext_name in seen_names:
-                    prev_type, prev_diagram, _, _ = seen_names[ext_name]
-                    self._error(
-                        f"Duplicate element name '{ext_name}': external in SCD '{scd_name}' "
-                        f"conflicts with {prev_type} in '{prev_diagram}'",
-                        ext_name,
-                        ext.source_file,
-                        ext.line,
-                    )
-                else:
-                    seen_names[ext_name] = ("external", scd_name, ext.source_file, ext.line)
+            if scd.system:
+                self._check_duplicate_name(
+                    seen_names,
+                    scd.system.name,
+                    "system",
+                    f"SCD '{scd_name}'",
+                    scd.system.source_file,
+                    scd.system.line,
+                )
 
-            # Collect datastores from SCDs
+            for ext_name, ext in scd.externals.items():
+                self._check_duplicate_name(
+                    seen_names,
+                    ext_name,
+                    "external",
+                    f"SCD '{scd_name}'",
+                    ext.source_file,
+                    ext.line,
+                )
+
             for ds_name, ds in scd.datastores.items():
-                if ds_name in seen_names:
-                    prev_type, prev_diagram, _, _ = seen_names[ds_name]
-                    self._error(
-                        f"Duplicate element name '{ds_name}': datastore in SCD '{scd_name}' "
-                        f"conflicts with {prev_type} in '{prev_diagram}'",
-                        ds_name,
-                        ds.source_file,
-                        ds.line,
-                    )
-                else:
-                    seen_names[ds_name] = ("datastore", scd_name, ds.source_file, ds.line)
+                self._check_duplicate_name(
+                    seen_names,
+                    ds_name,
+                    "datastore",
+                    f"SCD '{scd_name}'",
+                    ds.source_file,
+                    ds.line,
+                )
+
+        # Collect processes from all DFDs
+        for dfd_name, dfd in doc.dfds.items():
+            for proc_name, proc in dfd.processes.items():
+                self._check_duplicate_name(
+                    seen_names,
+                    proc_name,
+                    "process",
+                    f"DFD '{dfd_name}'",
+                    proc.source_file,
+                    proc.line,
+                )
 
     def _validate_dfd_datastore_conflicts(self, doc: DesignDocument) -> None:
         """Validate DFD local datastores don't conflict with SCD elements.

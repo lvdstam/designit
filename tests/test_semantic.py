@@ -509,7 +509,8 @@ class TestFlowDataDictValidation:
         messages = validate(doc)
         errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
         assert len(errors) == 1
-        # Expected format: "Flow '<flow_name>' in SCD '<diagram_name>' is not defined in data dictionary"
+        # Expected format:
+        # "Flow '<flow_name>' in SCD '<diagram_name>' is not defined in data dictionary"
         assert "Flow 'TestFlow'" in errors[0].message
         assert "SCD 'ContextDiagram'" in errors[0].message
         assert "not defined in data dictionary" in errors[0].message
@@ -696,7 +697,8 @@ dfd TestDFD {
         orphan_warning = next((w for w in warnings if "Orphan" in w.message), None)
         assert orphan_warning is not None, "Should have warning about Orphan element"
         assert orphan_warning.line is not None, "Orphan warning should have line number"
-        # Orphan is on line 12 in this source (lines are counted from 1, with string starting with newline)
+        # Orphan is on line 12 in this source
+        # (lines are counted from 1, with string starting with newline)
         assert orphan_warning.line == 12, f"Expected line 12, got {orphan_warning.line}"
 
     def test_scd_orphan_warning_has_line_number(self) -> None:
@@ -1367,6 +1369,28 @@ class TestNoDuplicateNames:
     REQ-SEM-087: No duplicate element names across the import tree.
     """
 
+    def test_duplicate_system_names_error(self) -> None:
+        """Duplicate system names should produce an error (REQ-SEM-087)."""
+        source = """
+        scd Context1 {
+            system CoreSystem {}
+            external Client1 {}
+            flow F1: Client1 -> CoreSystem
+        }
+
+        scd Context2 {
+            system CoreSystem {}
+            external Client2 {}
+            flow F2: Client2 -> CoreSystem
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # Should have error about duplicate "CoreSystem" system name
+        assert len(errors) >= 1
+        assert any("CoreSystem" in e.message for e in errors)
+
     def test_duplicate_external_names_error(self) -> None:
         """Duplicate external names should produce an error."""
         source = """
@@ -1390,37 +1414,41 @@ class TestNoDuplicateNames:
         assert any("Customer" in e.message for e in errors)
 
     def test_duplicate_process_names_across_dfds_error(self) -> None:
-        """Duplicate process names across DFDs should produce an error."""
+        """Duplicate process names across DFDs should produce an error (REQ-SEM-087)."""
         source = """
         datadict {
-            F1 = { data: string }
-            F2 = { data: string }
+            Request = { data: string }
+            Response = { data: string }
         }
-        scd Context {
-            system Sys {}
-            external E1 {}
-            external E2 {}
-            flow F1: E1 -> Sys
-            flow F2: E2 -> Sys
+        scd Context1 {
+            system Sys1 {}
+            external Client1 {}
+            flow Request: Client1 -> Sys1
+        }
+        scd Context2 {
+            system Sys2 {}
+            external Client2 {}
+            flow Response: Client2 -> Sys2
         }
 
         dfd DFD1 {
-            refines: Context.Sys
-
+            refines: Context1.Sys1
             process Handler {}
+            flow Request: -> Handler
+        }
 
-            flow F1: -> Handler
-            flow F2: -> Handler
+        dfd DFD2 {
+            refines: Context2.Sys2
+            process Handler {}
+            flow Response: -> Handler
         }
         """
-        # This is a bit tricky - processes in different DFDs might be allowed to share names
-        # if they're in the same abstraction. Let's test a clearer case where
-        # two DFDs try to define a process with the same name at the same level.
         doc = analyze_string(source)
         messages = validate(doc)
-        # No duplicate error expected here since there's only one DFD
-        # This test mainly verifies parsing works
-        assert doc is not None
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # Should have error about duplicate "Handler" process name
+        assert len(errors) >= 1
+        assert any("Handler" in e.message for e in errors)
 
     def test_duplicate_datastore_names_error(self) -> None:
         """Duplicate datastore names should produce an error."""

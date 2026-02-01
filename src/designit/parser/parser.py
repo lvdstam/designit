@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal
 
 from lark import Lark, Token, Transformer, v_args
 from lark.exceptions import UnexpectedInput
@@ -64,7 +64,7 @@ class ParseError(Exception):
 
 
 # Type alias for property values
-PropertyValue: TypeAlias = str | int | float | bool | list[str | int | float | bool]
+type PropertyValue = str | int | float | bool | list[str | int | float | bool]
 
 
 def _get_location(meta: Any) -> SourceLocation | None:

@@ -6,6 +6,7 @@ A Domain-Specific Language (DSL) for creating Yourdon-style design documents. Se
 
 - **Ask before running commands:** Always ask permission before executing shell commands. Show the user the commands you plan to run and let them execute the commands themselves if they prefer.
 - **Ask before making changes:** For significant changes, explain what you plan to do and get confirmation before proceeding.
+- **Flag requirement/implementation gaps:** When you discover that the implementation differs from what is specified in `docs/requirements.md` (and this is not due to a change you are currently making), flag this discrepancy and ask for guidance on how to proceed. Do not silently fix or ignore such gaps.
 
 ## External Documentation
 

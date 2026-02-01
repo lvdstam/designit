@@ -1280,10 +1280,10 @@ class TestQualifiedTypeRefParsing:
         doc = parse_string(source)
         assert len(doc.datadicts) == 2
 
-        serviceB = doc.datadicts[1]
-        assert serviceB.namespace == "ServiceB"
+        service_b = doc.datadicts[1]
+        assert service_b.namespace == "ServiceB"
 
-        request_def = serviceB.definitions[0]
+        request_def = service_b.definitions[0]
         assert request_def.name == "Request"
 
         struct = request_def.definition
@@ -1390,9 +1390,9 @@ class TestQualifiedTypeRefParsing:
         """DataDictTypeRefNode should have correct namespace, name, and qualified_name."""
         source = """
         datadict NS {
-            TypeA = { 
+            TypeA = {
                 qualified: Other.Type
-                simple: LocalType 
+                simple: LocalType
             }
         }
         """
