@@ -496,12 +496,13 @@ def _generate_doc_diagrams(
         extension = diagram_format
 
     # Generate only referenced diagrams
-    for name, _ in diagram_refs:
-        if name not in all_diagrams:
+    for name, diagram_type in diagram_refs:
+        prefixed_name = f"{diagram_type}_{name}"
+        if prefixed_name not in all_diagrams:
             continue
 
-        content = all_diagrams[name]
-        out_file = output_dir / f"{name}.{extension}"
+        content = all_diagrams[prefixed_name]
+        out_file = output_dir / f"{prefixed_name}.{extension}"
 
         if diagram_format in ("svg", "png"):
             _render_graphviz(content, out_file, diagram_format)

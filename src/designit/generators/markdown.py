@@ -855,10 +855,14 @@ class MarkdownGenerator:
             self.diagram_refs.append(
                 DiagramReference(name=expr.diagram_name, diagram_type=diagram_type)
             )
+            # Include type prefix in filename to match generator output
+            prefixed_name = f"{diagram_type}_{expr.diagram_name}"
+        else:
+            prefixed_name = expr.diagram_name
 
         # Generate markdown image reference
         ext = self.diagram_format
-        filename = f"{expr.diagram_name}.{ext}"
+        filename = f"{prefixed_name}.{ext}"
         rel_path = f"{self.diagram_dir}/{filename}"
 
         return f"![{expr.diagram_name}]({rel_path})"

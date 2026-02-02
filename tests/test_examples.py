@@ -281,9 +281,9 @@ class TestDFDBoundaryFlowGeneration:
         generator = GraphVizGenerator()
         output = generator.generate_dfd(dfd_with_boundary_flows.dfds["TestDFD"])
 
-        # Boundary nodes should be point shapes
-        assert '"_boundary_Request" [shape=point label="" width=0.15]' in output
-        assert '"_boundary_Response" [shape=point label="" width=0.15]' in output
+        # Boundary nodes should be invisible
+        assert '"_boundary_Request" [shape=point label="" width=0.01 style=invis]' in output
+        assert '"_boundary_Response" [shape=point label="" width=0.01 style=invis]' in output
 
     def test_graphviz_dfd_boundary_flow_edges(
         self, dfd_with_boundary_flows: DesignDocument

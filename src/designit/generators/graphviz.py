@@ -144,7 +144,7 @@ class GraphVizGenerator:
             boundary_id = f"_boundary_{flow_name}"
             if boundary_id not in boundary_nodes:
                 boundary_nodes.add(boundary_id)
-                out.write(f'  "{boundary_id}" [shape=point label="" width=0.15];\n')
+                out.write(f'  "{boundary_id}" [shape=point label="" width=0.01 style=invis];\n')
 
     def _write_dfd_flows(self, dfd: DFDModel, bidirectional: dict[str, str], out: TextIO) -> None:
         """Write data flow edges to DOT output."""
@@ -425,8 +425,6 @@ class GraphVizGenerator:
                 continue
             style = self._placeholder_style() if ext.is_placeholder else ""
             label = self._escape(name)
-            if ext.description:
-                label += f"\\n{self._escape(ext.description)}"
             out.write(f'  "{name}" [shape=box label="{label}" {style}];\n')
 
     def _write_scd_datastores(self, scd: SCDModel, out: TextIO) -> None:
@@ -437,8 +435,6 @@ class GraphVizGenerator:
                 continue
             style = self._placeholder_style() if ds.is_placeholder else ""
             label = self._escape(name)
-            if ds.description:
-                label += f"\\n{self._escape(ds.description)}"
             out.write(f'  "{name}" [shape=cylinder label="{label}" {style}];\n')
 
     def _write_scd_flows(self, scd: SCDModel, out: TextIO) -> None:

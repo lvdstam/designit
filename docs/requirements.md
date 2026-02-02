@@ -1213,12 +1213,11 @@ Mermaid DFD boundary nodes shall use consistent minimal styling.
 ---
 
 #### REQ-GEN-012: GraphViz DFD Boundary Node Styling [DONE]
-GraphViz DFD boundary nodes shall use consistent minimal styling.
+GraphViz DFD boundary nodes shall be invisible.
 
 **Acceptance Criteria:**
-- Boundary nodes use point shape: `shape=point`
+- Boundary nodes are invisible: `style=invis`
 - Boundary nodes have no label: `label=""`
-- Boundary nodes are small: `width=0.15`
 - Node IDs prefixed with `_boundary_` to avoid conflicts
 
 **Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator._write_dfd()`
@@ -2191,13 +2190,15 @@ DFD processes shall be rendered as circles (not ellipses).
 
 ---
 
-#### REQ-GEN-061: SCD External Box Shape Without Description [TODO]
+#### REQ-GEN-061: SCD External Box Shape Without Description [DONE]
 SCD external entities shall be rendered as simple boxes without embedded descriptions.
 
 **Acceptance Criteria:**
 - External rendered as rectangle with name only
 - Description not shown inside the shape
 - Description available via document generation (REQ-DOC-011)
+
+**Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator._write_scd_externals()`
 
 ---
 
@@ -2216,6 +2217,18 @@ DFD processes shall be rendered without embedded descriptions.
 **Acceptance Criteria:**
 - Process rendered with name only
 - Description available via document generation
+
+---
+
+#### REQ-GEN-064: SCD Datastore Without Description [DONE]
+SCD datastores shall be rendered without embedded descriptions.
+
+**Acceptance Criteria:**
+- Datastore rendered as cylinder with name only
+- Description not shown inside the shape
+- Description available via document generation (REQ-DOC-011)
+
+**Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator._write_scd_datastores()`
 
 ---
 

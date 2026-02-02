@@ -237,3 +237,76 @@ class TestGraphVizDFDBidirectionalDetection:
         bidirectional = generator._detect_dfd_bidirectional_flows(dfd)
 
         assert len(bidirectional) == 0
+
+
+class TestGraphVizDFDBoundaryNodes:
+    """Tests for GraphViz DFD boundary node styling (REQ-GEN-012)."""
+
+    def test_boundary_nodes_are_invisible(self) -> None:
+        """Boundary nodes should have style=invis to be invisible."""
+        source = """
+        datadict {
+            Data = { value: string }
+        }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Data: User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Data: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Level0"]
+
+        generator = GraphVizGenerator()
+        output = generator.generate_dfd(dfd)
+
+        # Boundary node should be invisible
+        assert "style=invis" in output
+        assert "_boundary_Data" in output
+
+
+class TestGraphVizSCDElementStyling:
+    """Tests for GraphViz SCD element styling (REQ-GEN-061, REQ-GEN-064)."""
+
+    def test_scd_external_without_description(self) -> None:
+        """SCD externals should not include description in label."""
+        source = """
+        scd Context {
+            system API {}
+            external Client { description: "The client application" }
+            flow Request: Client -> API
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+
+        generator = GraphVizGenerator()
+        output = generator.generate_scd(scd)
+
+        # External should have name only, not description
+        assert 'label="Client"' in output
+        assert "The client application" not in output
+
+    def test_scd_datastore_without_description(self) -> None:
+        """SCD datastores should not include description in label."""
+        source = """
+        scd Context {
+            system API {}
+            datastore DB { description: "The database" }
+            flow Data: API -> DB
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+
+        generator = GraphVizGenerator()
+        output = generator.generate_scd(scd)
+
+        # Datastore should have name only, not description
+        assert 'label="DB"' in output
+        assert "The database" not in output

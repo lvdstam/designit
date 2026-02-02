@@ -361,7 +361,8 @@ class TestMarkdownGenerator:
         generator = MarkdownGenerator(doc, diagram_format="svg", diagram_dir="images")
         result = generator.generate(exprs)
 
-        assert "![Context](images/Context.svg)" in result.content
+        # Diagram reference includes type prefix to match generator output filenames
+        assert "![Context](images/scd_Context.svg)" in result.content
         assert len(result.diagram_refs) == 1
         assert result.diagram_refs[0].name == "Context"
 
@@ -433,6 +434,35 @@ class TestMarkdownGenerator:
 
         # The escaped braces should become literal braces around the rendered value
         assert "Value: {API}" in result.content
+
+    def test_diagram_reference_includes_type_prefix(self) -> None:
+        """Diagram references should include type prefix in filename."""
+        source = """
+        scd Context {
+            system API {}
+            external Client {}
+            flow Request: Client -> API
+        }
+        dfd ProcessFlow {
+            refines: Context.API
+            process Handler {}
+            flow Request: -> Handler
+        }
+        """
+        doc = self._make_document(source)
+        parser = TemplateParser()
+
+        # Test SCD gets scd_ prefix
+        exprs = parser.parse("{{diagram:Context}}")
+        generator = MarkdownGenerator(doc, diagram_format="svg", diagram_dir="diagrams")
+        result = generator.generate(exprs)
+        assert "![Context](diagrams/scd_Context.svg)" in result.content
+
+        # Test DFD gets dfd_ prefix
+        exprs = parser.parse("{{diagram:ProcessFlow}}")
+        generator = MarkdownGenerator(doc, diagram_format="png", diagram_dir="images")
+        result = generator.generate(exprs)
+        assert "![ProcessFlow](images/dfd_ProcessFlow.png)" in result.content
 
 
 class TestGenerateDocument:
