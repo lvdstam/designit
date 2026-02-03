@@ -999,7 +999,7 @@ The system shall generate Mermaid diagram files.
 DFDs shall be generated as Mermaid flowcharts.
 
 **Acceptance Criteria:**
-- Flowchart direction: TB (top to bottom)
+- Flowchart direction: LR (left to right)
 - Externals: rectangle shape `["label"]`
 - Processes: circle shape `(("label"))`
 - Datastores: cylinder shape `[("label")]`
@@ -1107,6 +1107,7 @@ The system shall generate GraphViz DOT files.
 DFDs shall be generated as GraphViz directed graphs.
 
 **Acceptance Criteria:**
+- Layout direction: LR (left to right) via `rankdir=LR`
 - Externals: `shape=box`
 - Processes: `shape=circle`
 - Datastores: `shape=cylinder`

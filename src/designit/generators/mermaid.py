@@ -54,7 +54,7 @@ class MermaidGenerator:
     def _write_dfd(self, dfd: DFDModel, out: TextIO) -> None:
         """Write DFD to Mermaid format."""
         out.write(f"---\ntitle: {dfd.name}\n---\n")
-        out.write("flowchart TB\n")
+        out.write("flowchart LR\n")
 
         # Write nodes
         self._write_dfd_externals(dfd, out)
