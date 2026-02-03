@@ -282,8 +282,6 @@ ELEMENT_PROPERTIES: dict[str, set[str]] = {
         "is_placeholder",
         "source_file",
         "line",
-        "inputs",
-        "outputs",
     },
     "datastore": {"name", "description", "is_placeholder", "source_file", "line"},
     "dfd_flow": {"name", "flow_type", "description", "source_file", "line"},

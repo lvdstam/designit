@@ -22,8 +22,7 @@ class ExternalEntity(BaseElement):
 class Process(BaseElement):
     """A process in a DFD."""
 
-    inputs: list[str] = Field(default_factory=list)
-    outputs: list[str] = Field(default_factory=list)
+    pass
 
 
 class Datastore(BaseElement):

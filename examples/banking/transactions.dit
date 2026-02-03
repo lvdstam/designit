@@ -7,20 +7,14 @@ dfd TransactionProcessing {
 
     process ValidateTransaction {
         description: "Validates transaction against business rules"
-        inputs: [TransactionRequest]
-        outputs: [ValidationResult]
     }
 
     process ExecuteTransaction {
         description: "Executes the validated transaction"
-        inputs: [ValidatedTransaction]
-        outputs: [TransactionResult, BalanceUpdate]
     }
 
     process RecordTransaction {
         description: "Records transaction in audit log"
-        inputs: [TransactionResult]
-        outputs: [AuditRecord]
     }
 
     process NotifyCustomer {

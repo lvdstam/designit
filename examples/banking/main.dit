@@ -73,20 +73,14 @@ dfd BankingSystemLevel0 {
     // Processes
     process AuthenticateUser {
         description: "Validates user credentials"
-        inputs: [Credentials]
-        outputs: [AuthToken, AuthError]
     }
 
     process ProcessTransaction {
         description: "Handles all transaction types"
-        inputs: [TransactionRequest]
-        outputs: [TransactionConfirmation, AccountUpdateInternal]
     }
 
     process GenerateReport {
         description: "Creates account statements and reports"
-        inputs: [ReportRequest]
-        outputs: [Report]
     }
 
     process HandleTransfer {

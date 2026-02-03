@@ -246,8 +246,6 @@ class SemanticAnalyzer:
             process = Process(
                 name=proc.name,
                 description=props.get("description"),
-                inputs=props.get("inputs", []),
-                outputs=props.get("outputs", []),
                 is_placeholder=self._is_placeholder(proc.body),
                 source_file=source_file,
                 line=proc.location.line if proc.location else None,
