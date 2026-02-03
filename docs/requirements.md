@@ -928,6 +928,19 @@ DFDs shall not declare external entities.
 
 ---
 
+#### REQ-SEM-089: Datadict Type Name Conflicts [DONE]
+Datadict type names must not conflict with diagram element names.
+
+**Acceptance Criteria:**
+- Anonymous datadict types must not share names with any: system, external, datastore, process
+- Namespaced datadict types must not share names with elements in same-named SCD or DFD
+- Datadict namespace names are allowed to match SCD/DFD/external names (for terminator interfaces and DFD-specific types)
+- Severity: ERROR
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_datadict_name_conflicts()`
+
+---
+
 ### 2.3 Import Resolution
 
 #### REQ-SEM-100: Import Path Resolution [DONE]

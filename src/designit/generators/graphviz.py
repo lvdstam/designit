@@ -159,23 +159,23 @@ class GraphVizGenerator:
                 rendered_bidirectional.add(flow_name)
                 boundary_id = f"_boundary_{flow_name}"
                 process_name = bidirectional[flow_name]
-                out.write(f'  "{boundary_id}" -> "{process_name}" [label="{label}" dir=both];\n')
+                out.write(f'  "{boundary_id}" -> "{process_name}" [label=" {label} " dir=both];\n')
             elif flow_type == "inbound":
                 assert flow.target is not None, "Inbound flow must have a target"
                 source_id = f"_boundary_{flow_name}"
                 target_id = flow.target.name
-                out.write(f'  "{source_id}" -> "{target_id}" [label="{label}"];\n')
+                out.write(f'  "{source_id}" -> "{target_id}" [label=" {label} "];\n')
             elif flow_type == "outbound":
                 assert flow.source is not None, "Outbound flow must have a source"
                 source_id = flow.source.name
                 target_id = f"_boundary_{flow_name}"
-                out.write(f'  "{source_id}" -> "{target_id}" [label="{label}"];\n')
+                out.write(f'  "{source_id}" -> "{target_id}" [label=" {label} "];\n')
             else:  # internal
                 assert flow.source is not None, "Internal flow must have a source"
                 assert flow.target is not None, "Internal flow must have a target"
                 source_id = flow.source.name
                 target_id = flow.target.name
-                out.write(f'  "{source_id}" -> "{target_id}" [label="{label}"];\n')
+                out.write(f'  "{source_id}" -> "{target_id}" [label=" {label} "];\n')
 
     # ============================================
     # ERD Generation
@@ -233,7 +233,7 @@ class GraphVizGenerator:
         # Relationships (edges with cardinality labels)
         out.write("\n  // Relationships\n")
         for name, rel in erd.relationships.items():
-            label = f"{self._escape(name)}\\n{rel.cardinality}"
+            label = f" {self._escape(name)}\\n{rel.cardinality} "
             out.write(
                 f'  "{rel.source_entity}" -> "{rel.target_entity}" '
                 f'[label="{label}" arrowhead=none arrowtail=none];\n'
@@ -309,7 +309,7 @@ class GraphVizGenerator:
                 parts.append(f"/ {self._escape(trans.action)}")
             label = "".join(parts) if parts else self._escape(name)
 
-            out.write(f'  "{trans.source_state}" -> "{trans.target_state}" [label="{label}"];\n')
+            out.write(f'  "{trans.source_state}" -> "{trans.target_state}" [label=" {label} "];\n')
 
     # ============================================
     # Structure Chart Generation
@@ -360,7 +360,10 @@ class GraphVizGenerator:
                     couples.extend([f"C:{c}" for c in module.control_couples])
 
                 label = ", ".join(couples) if couples else ""
-                out.write(f'  "{name}" -> "{called}" [label="{label}"];\n')
+                if label:
+                    out.write(f'  "{name}" -> "{called}" [label=" {label} "];\n')
+                else:
+                    out.write(f'  "{name}" -> "{called}";\n')
 
         out.write("}\n")
 
@@ -441,12 +444,12 @@ class GraphVizGenerator:
         out.write("\n  // Data Flows\n")
         for name, flow in scd.flows.items():
             label = self._escape(name)
+            src = flow.source.name
+            tgt = flow.target.name
             if flow.direction == "bidirectional":
-                out.write(
-                    f'  "{flow.source.name}" -> "{flow.target.name}" [label="{label}" dir=both];\n'
-                )
+                out.write(f'  "{src}" -> "{tgt}" [label=" {label} " dir=both];\n')
             else:
-                out.write(f'  "{flow.source.name}" -> "{flow.target.name}" [label="{label}"];\n')
+                out.write(f'  "{src}" -> "{tgt}" [label=" {label} "];\n')
 
     # ============================================
     # Full Document Generation

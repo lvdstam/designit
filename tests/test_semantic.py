@@ -2213,3 +2213,343 @@ class TestNamespacedDataDict:
             if "namespace" in e.message.lower() and "reference" in e.message.lower()
         ]
         assert len(cross_ns_errors) == 0, f"Got unexpected errors: {cross_ns_errors}"
+
+
+class TestDataDictNameConflicts:
+    """Tests for datadict type name conflicts with diagram elements.
+
+    REQ-SEM-088: Datadict type names must not conflict with element names.
+    """
+
+    # === Anonymous type conflicts ===
+
+    def test_anonymous_type_conflicts_with_scd_external_error(self) -> None:
+        """Anonymous datadict type should not conflict with SCD external."""
+        source = """
+        datadict {
+            Customer = { name: string }
+        }
+        scd Context {
+            system Sys {}
+            external Customer {}
+            flow Customer: Customer -> Sys
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("Customer" in e.message and "datadict type" in e.message for e in errors)
+
+    def test_anonymous_type_conflicts_with_scd_datastore_error(self) -> None:
+        """Anonymous datadict type should not conflict with SCD datastore."""
+        source = """
+        datadict {
+            Database = { connection: string }
+        }
+        scd Context {
+            system Sys {}
+            datastore Database {}
+            flow Database: Sys -> Database
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("Database" in e.message and "datadict type" in e.message for e in errors)
+
+    def test_anonymous_type_conflicts_with_scd_system_error(self) -> None:
+        """Anonymous datadict type should not conflict with SCD system."""
+        source = """
+        datadict {
+            MainSystem = { config: string }
+        }
+        scd Context {
+            system MainSystem {}
+            external Client {}
+            flow Request: Client -> MainSystem
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("MainSystem" in e.message and "datadict type" in e.message for e in errors)
+
+    def test_anonymous_type_conflicts_with_dfd_process_error(self) -> None:
+        """Anonymous datadict type should not conflict with DFD process."""
+        source = """
+        datadict {
+            Handler = { data: string }
+            Request = { payload: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Request: Client -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Request: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("Handler" in e.message and "datadict type" in e.message for e in errors)
+
+    def test_anonymous_type_conflicts_with_dfd_local_datastore_error(self) -> None:
+        """Anonymous datadict type should not conflict with DFD local datastore."""
+        source = """
+        datadict {
+            Cache = { entries: string }
+            Request = { payload: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Request: Client -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            datastore Cache {}
+            flow Request: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("Cache" in e.message and "datadict type" in e.message for e in errors)
+
+    # === Namespaced type conflicts (same namespace as DFD) ===
+
+    def test_namespaced_type_conflicts_with_same_dfd_process_error(self) -> None:
+        """Namespaced datadict type should conflict with process in same-named DFD."""
+        source = """
+        datadict {
+            Request = { payload: string }
+        }
+        datadict Level0 {
+            Handler = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Request: Client -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Request: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any(
+            "Handler" in e.message and "datadict type" in e.message and "Level0" in e.message
+            for e in errors
+        )
+
+    def test_namespaced_type_conflicts_with_same_dfd_datastore_error(self) -> None:
+        """Namespaced datadict type should conflict with local datastore in same-named DFD."""
+        source = """
+        datadict {
+            Request = { payload: string }
+        }
+        datadict Level0 {
+            LocalCache = { entries: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Request: Client -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            datastore LocalCache {}
+            flow Request: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any(
+            "LocalCache" in e.message and "datadict type" in e.message and "Level0" in e.message
+            for e in errors
+        )
+
+    # === Namespaced type conflicts (same namespace as SCD) ===
+
+    def test_namespaced_type_conflicts_with_same_scd_system_error(self) -> None:
+        """Namespaced datadict type should conflict with system in same-named SCD."""
+        source = """
+        datadict Context {
+            MainSystem = { config: string }
+        }
+        scd Context {
+            system MainSystem {}
+            external Client {}
+            flow Request: Client -> MainSystem
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any(
+            "MainSystem" in e.message and "datadict type" in e.message and "Context" in e.message
+            for e in errors
+        )
+
+    def test_namespaced_type_conflicts_with_same_scd_external_error(self) -> None:
+        """Namespaced datadict type should conflict with external in same-named SCD."""
+        source = """
+        datadict Context {
+            Client = { name: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Request: Client -> Sys
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any(
+            "Client" in e.message and "datadict type" in e.message and "Context" in e.message
+            for e in errors
+        )
+
+    def test_namespaced_type_conflicts_with_same_scd_datastore_error(self) -> None:
+        """Namespaced datadict type should conflict with datastore in same-named SCD."""
+        source = """
+        datadict Context {
+            Storage = { path: string }
+        }
+        scd Context {
+            system Sys {}
+            datastore Storage {}
+            flow Data: Sys -> Storage
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any(
+            "Storage" in e.message and "datadict type" in e.message and "Context" in e.message
+            for e in errors
+        )
+
+    # === No conflict cases ===
+
+    def test_namespaced_type_no_conflict_with_different_dfd_process(self) -> None:
+        """Namespaced datadict type should NOT conflict with process in differently-named DFD."""
+        source = """
+        datadict {
+            Request = { payload: string }
+        }
+        datadict ServiceA {
+            Handler = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Request: Client -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Request: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # ServiceA.Handler should NOT conflict with Handler in DFD Level0
+        conflict_errors = [
+            e for e in errors if "Handler" in e.message and "datadict type" in e.message
+        ]
+        assert len(conflict_errors) == 0, f"Unexpected conflicts: {conflict_errors}"
+
+    def test_namespaced_type_no_conflict_with_different_scd_external(self) -> None:
+        """Namespaced datadict type should NOT conflict with external in differently-named SCD."""
+        source = """
+        datadict ServiceA {
+            Customer = { name: string }
+        }
+        scd Context {
+            system Sys {}
+            external Customer {}
+            flow ServiceA.Customer: Customer -> Sys
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # ServiceA.Customer should NOT conflict with external Customer in SCD Context
+        conflict_errors = [
+            e for e in errors if "Customer" in e.message and "datadict type" in e.message
+        ]
+        assert len(conflict_errors) == 0, f"Unexpected conflicts: {conflict_errors}"
+
+    def test_datadict_namespace_allowed_same_as_dfd_name(self) -> None:
+        """Datadict namespace name matching DFD name should be allowed."""
+        source = """
+        datadict {
+            Req = { data: string }
+        }
+        datadict Level0 {
+            InternalData = { value: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Req: Client -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Req: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # No error - namespace Level0 can match DFD Level0
+        # InternalData doesn't conflict with any element
+        assert len(errors) == 0, f"Unexpected errors: {[e.message for e in errors]}"
+
+    def test_datadict_namespace_allowed_same_as_external_name(self) -> None:
+        """Datadict namespace name matching external name should be allowed.
+
+        This allows defining terminator interface types.
+        """
+        source = """
+        datadict Customer {
+            Request = { order_id: string }
+            Response = { status: string }
+        }
+        scd Context {
+            system Sys {}
+            external Customer {}
+            flow Customer.Request: Customer -> Sys
+            flow Customer.Response: Sys -> Customer
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # No error - datadict namespace "Customer" can match external "Customer"
+        assert len(errors) == 0, f"Unexpected errors: {[e.message for e in errors]}"

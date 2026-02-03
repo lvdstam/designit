@@ -256,13 +256,13 @@ class TestDFDBoundaryFlowGeneration:
         output = generator.generate_dfd(dfd_with_boundary_flows.dfds["TestDFD"])
 
         # Inbound flow: boundary -> target
-        assert '_boundary_Request -->|"Request"| Handler' in output
+        assert '_boundary_Request -->|" Request "| Handler' in output
 
         # Outbound flow: source -> boundary
-        assert 'Processor -->|"Response"| _boundary_Response' in output
+        assert 'Processor -->|" Response "| _boundary_Response' in output
 
         # Internal flow: source -> target (normal)
-        assert 'Handler -->|"InternalData"| Processor' in output
+        assert 'Handler -->|" InternalData "| Processor' in output
 
     def test_graphviz_dfd_boundary_flows_no_crash(
         self, dfd_with_boundary_flows: DesignDocument
@@ -293,13 +293,13 @@ class TestDFDBoundaryFlowGeneration:
         output = generator.generate_dfd(dfd_with_boundary_flows.dfds["TestDFD"])
 
         # Inbound flow: boundary -> target
-        assert '"_boundary_Request" -> "Handler" [label="Request"]' in output
+        assert '"_boundary_Request" -> "Handler" [label=" Request "]' in output
 
         # Outbound flow: source -> boundary
-        assert '"Processor" -> "_boundary_Response" [label="Response"]' in output
+        assert '"Processor" -> "_boundary_Response" [label=" Response "]' in output
 
         # Internal flow: source -> target (normal)
-        assert '"Handler" -> "Processor" [label="InternalData"]' in output
+        assert '"Handler" -> "Processor" [label=" InternalData "]' in output
 
     def test_dfd_without_boundary_flows_still_works(self) -> None:
         """Test that DFDs with only internal flows still generate correctly."""
@@ -332,7 +332,7 @@ class TestDFDBoundaryFlowGeneration:
         assert "_boundary_Input" in mermaid_output
         assert "_boundary_Output" in mermaid_output
         # Internal flow should work normally
-        assert 'Worker -->|"InternalFlow"| Validator' in mermaid_output
+        assert 'Worker -->|" InternalFlow "| Validator' in mermaid_output
 
         graphviz_gen = GraphVizGenerator()
         graphviz_output = graphviz_gen.generate_dfd(doc.dfds["InternalOnlyDFD"])
@@ -340,7 +340,7 @@ class TestDFDBoundaryFlowGeneration:
         assert '"Validator"' in graphviz_output
         assert '"_boundary_Input"' in graphviz_output
         assert '"_boundary_Output"' in graphviz_output
-        assert '"Worker" -> "Validator" [label="InternalFlow"]' in graphviz_output
+        assert '"Worker" -> "Validator" [label=" InternalFlow "]' in graphviz_output
 
 
 class TestBidirectionalBoundaryFlowRendering:
@@ -401,12 +401,12 @@ class TestBidirectionalBoundaryFlowRendering:
 
         # Should have bidirectional edge with <-->
         assert (
-            '<-->|"DataExchange"|' in output
-            or '_boundary_DataExchange <-->|"DataExchange"| Handler' in output
+            '<-->|" DataExchange "|' in output
+            or '_boundary_DataExchange <-->|" DataExchange "| Handler' in output
         )
 
         # Should NOT have two separate edges for DataExchange
-        assert output.count('-->|"DataExchange"|') <= 1  # At most one directional edge if any
+        assert output.count('-->|" DataExchange "|') <= 1  # At most one directional edge if any
 
     def test_mermaid_different_processes_separate_edges(
         self, dfd_with_bidirectional_different_processes: DesignDocument
@@ -438,7 +438,7 @@ class TestBidirectionalBoundaryFlowRendering:
         assert "dir=both" in output
 
         # Should have the edge with label
-        assert 'label="DataExchange"' in output
+        assert 'label=" DataExchange "' in output
 
     def test_graphviz_different_processes_separate_edges(
         self, dfd_with_bidirectional_different_processes: DesignDocument

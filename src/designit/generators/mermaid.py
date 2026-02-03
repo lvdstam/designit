@@ -162,23 +162,23 @@ class MermaidGenerator:
                 rendered_bidirectional.add(flow_name)
                 boundary_id = f"_boundary_{self._safe_id(flow_name)}"
                 process_id = self._safe_id(bidirectional[flow_name])
-                out.write(f'    {boundary_id} <-->|"{label}"| {process_id}\n')
+                out.write(f'    {boundary_id} <-->|" {label} "| {process_id}\n')
             elif flow_type == "inbound":
                 assert flow.target is not None, "Inbound flow must have a target"
                 source_id = f"_boundary_{self._safe_id(flow_name)}"
                 target_id = self._safe_id(flow.target.name)
-                out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+                out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
             elif flow_type == "outbound":
                 assert flow.source is not None, "Outbound flow must have a source"
                 source_id = self._safe_id(flow.source.name)
                 target_id = f"_boundary_{self._safe_id(flow_name)}"
-                out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+                out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
             else:  # internal
                 assert flow.source is not None, "Internal flow must have a source"
                 assert flow.target is not None, "Internal flow must have a target"
                 source_id = self._safe_id(flow.source.name)
                 target_id = self._safe_id(flow.target.name)
-                out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+                out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
 
     def _collect_dfd_placeholder_ids(self, dfd: DFDModel) -> list[str]:
         """Collect IDs of all placeholder elements in a DFD."""
@@ -419,7 +419,7 @@ class MermaidGenerator:
 
                 if couples:
                     label = ", ".join(couples)
-                    out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+                    out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
                 else:
                     out.write(f"    {source_id} --> {target_id}\n")
 
@@ -512,9 +512,9 @@ class MermaidGenerator:
             label = self._escape(name)
 
             if flow.direction == "bidirectional":
-                out.write(f'    {source_id} <-->|"{label}"| {target_id}\n')
+                out.write(f'    {source_id} <-->|" {label} "| {target_id}\n')
             else:
-                out.write(f'    {source_id} -->|"{label}"| {target_id}\n')
+                out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
 
     def _collect_scd_placeholder_ids(self, scd: SCDModel) -> list[str]:
         """Collect IDs of all placeholder elements in an SCD."""

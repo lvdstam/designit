@@ -84,6 +84,7 @@ class Validator:
         self._validate_dfd_flow_coverage(doc)
         self._validate_unique_names(doc)
         self._validate_dfd_datastore_conflicts(doc)
+        self._validate_datadict_name_conflicts(doc)
         self._validate_erds(doc)
         self._validate_stds(doc)
         self._validate_structures(doc)
@@ -921,6 +922,115 @@ class Validator:
                         ds.source_file,
                         ds.line,
                     )
+
+    def _collect_all_element_names(self, doc: DesignDocument) -> dict[str, tuple[str, str]]:
+        """Collect all element names from SCDs and DFDs.
+
+        Returns: dict mapping name -> (element_type, location_description)
+        """
+        all_element_names: dict[str, tuple[str, str]] = {}
+
+        # From SCDs: systems, externals, datastores
+        for scd_name, scd in doc.scds.items():
+            if scd.system:
+                all_element_names[scd.system.name] = ("system", f"SCD '{scd_name}'")
+            for ext_name in scd.externals:
+                all_element_names[ext_name] = ("external", f"SCD '{scd_name}'")
+            for ds_name in scd.datastores:
+                all_element_names[ds_name] = ("datastore", f"SCD '{scd_name}'")
+
+        # From DFDs: processes, local datastores
+        for dfd_name, dfd in doc.dfds.items():
+            for proc_name in dfd.processes:
+                all_element_names[proc_name] = ("process", f"DFD '{dfd_name}'")
+            for ds_name in dfd.datastores:
+                all_element_names[ds_name] = ("datastore", f"DFD '{dfd_name}'")
+
+        return all_element_names
+
+    def _check_namespaced_type_conflict(self, defn: DataDefinition, doc: DesignDocument) -> None:
+        """Check if a namespaced datadict type conflicts with elements in same-named SCD/DFD."""
+        type_name = defn.name
+        namespace = defn.namespace
+        assert namespace is not None
+
+        # Check SCD with same name as namespace
+        if namespace in doc.scds:
+            scd = doc.scds[namespace]
+            conflict = self._find_scd_element_conflict(scd, type_name)
+            if conflict:
+                self._error(
+                    f"Duplicate name '{type_name}': datadict type in '{namespace}' "
+                    f"conflicts with {conflict} in SCD '{namespace}'",
+                    type_name,
+                    defn.source_file,
+                    defn.line,
+                )
+
+        # Check DFD with same name as namespace
+        if namespace in doc.dfds:
+            dfd = doc.dfds[namespace]
+            conflict = self._find_dfd_element_conflict(dfd, type_name)
+            if conflict:
+                self._error(
+                    f"Duplicate name '{type_name}': datadict type in '{namespace}' "
+                    f"conflicts with {conflict} in DFD '{namespace}'",
+                    type_name,
+                    defn.source_file,
+                    defn.line,
+                )
+
+    def _find_scd_element_conflict(self, scd: SCDModel, name: str) -> str | None:
+        """Find if name conflicts with any SCD element. Returns element type or None."""
+        if scd.system and scd.system.name == name:
+            return "system"
+        if name in scd.externals:
+            return "external"
+        if name in scd.datastores:
+            return "datastore"
+        return None
+
+    def _find_dfd_element_conflict(self, dfd: DFDModel, name: str) -> str | None:
+        """Find if name conflicts with any DFD element. Returns element type or None."""
+        if name in dfd.processes:
+            return "process"
+        if name in dfd.datastores:
+            return "datastore"
+        return None
+
+    def _validate_datadict_name_conflicts(self, doc: DesignDocument) -> None:
+        """Validate datadict type names don't conflict with diagram element names.
+
+        REQ-SEM-088: Datadict type names must not conflict with element names.
+
+        Rules:
+        - Anonymous types must not match any element name (external, datastore, system, process)
+        - Namespaced types must not match elements in same-named SCD or DFD
+        """
+        if not doc.data_dictionary:
+            return
+
+        all_element_names = self._collect_all_element_names(doc)
+
+        # Check each datadict type
+        for defn in doc.data_dictionary.definitions.values():
+            type_name = defn.name
+            namespace = defn.namespace
+
+            if namespace is None:
+                # Anonymous type: check against ALL element names
+                if type_name in all_element_names:
+                    elem_type, elem_loc = all_element_names[type_name]
+                    self._error(
+                        f"Duplicate name '{type_name}': datadict type conflicts with "
+                        f"{elem_type} in {elem_loc}",
+                        type_name,
+                        defn.source_file,
+                        defn.line,
+                    )
+            else:
+                # Namespaced type: check against same-named SCD or DFD only
+                self._check_namespaced_type_conflict(defn, doc)
 
     def _report_placeholders(self, doc: DesignDocument) -> None:
         """Report all placeholder elements."""
