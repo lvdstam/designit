@@ -2202,12 +2202,16 @@ SCD external entities shall be rendered as simple boxes without embedded descrip
 
 ---
 
-#### REQ-GEN-062: SCD System Box Shape Without Description [TODO]
+#### REQ-GEN-062: SCD System Box Shape Without Description [DONE]
 SCD system shall be rendered as a box without embedded description.
 
 **Acceptance Criteria:**
 - System rendered with name only (no description in diagram)
 - Description available via document generation
+
+**Implementation:**
+- `src/designit/generators/mermaid.py:MermaidGenerator._write_scd_system()`
+- `src/designit/generators/graphviz.py:GraphVizGenerator._write_scd_system()`
 
 ---
 

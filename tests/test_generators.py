@@ -310,3 +310,45 @@ class TestGraphVizSCDElementStyling:
         # Datastore should have name only, not description
         assert 'label="DB"' in output
         assert "The database" not in output
+
+    def test_scd_system_without_description(self) -> None:
+        """SCD system should not include description in label (REQ-GEN-062)."""
+        source = """
+        scd Context {
+            system API { description: "The API system" }
+            external Client {}
+            flow Request: Client -> API
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+
+        generator = GraphVizGenerator()
+        output = generator.generate_scd(scd)
+
+        # System should have name only, not description
+        assert 'label="API"' in output
+        assert "The API system" not in output
+
+
+class TestMermaidSCDElementStyling:
+    """Tests for Mermaid SCD element styling (REQ-GEN-062)."""
+
+    def test_scd_system_without_description(self) -> None:
+        """SCD system should not include description in label (REQ-GEN-062)."""
+        source = """
+        scd Context {
+            system API { description: "The API system" }
+            external Client {}
+            flow Request: Client -> API
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+
+        generator = MermaidGenerator()
+        output = generator.generate_scd(scd)
+
+        # System should have name only, not description
+        assert "API" in output
+        assert "The API system" not in output

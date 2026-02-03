@@ -409,8 +409,7 @@ class GraphVizGenerator:
         if not self.include_placeholders and sys.is_placeholder:
             return
         label = self._escape(sys.name)
-        if sys.description:
-            label += f"\\n{self._escape(sys.description)}"
+        # Note: description intentionally not included in diagram (REQ-GEN-062)
         if sys.is_placeholder:
             style = 'pos="0,0!" style="dashed,filled" fillcolor=lightgray'
         else:

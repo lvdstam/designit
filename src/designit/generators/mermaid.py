@@ -479,8 +479,7 @@ class MermaidGenerator:
             return
         safe_id = self._safe_id(sys.name)
         label = self._escape(sys.name)
-        if sys.description:
-            label += f"<br/><i>{self._escape(sys.description)}</i>"
+        # Note: description intentionally not included in diagram (REQ-GEN-062)
         out.write(f'    {safe_id}[["{label}"]]\n')
 
     def _write_scd_externals(self, scd: SCDModel, out: TextIO) -> None:
