@@ -317,6 +317,7 @@ def _output_diagrams_to_files(
 @click.option("--diagram", "-d", multiple=True, help="Only generate specific diagram(s)")
 @click.option("--no-placeholders", is_flag=True, help="Exclude placeholder elements")
 @click.option("--stdout", is_flag=True, help="Print to stdout instead of files (text formats only)")
+@click.option("--no-check", is_flag=True, help="Skip validation (generate even with errors)")
 def generate(
     file: Path,
     output_format: str,
@@ -324,10 +325,14 @@ def generate(
     diagram: tuple[str, ...],
     no_placeholders: bool,
     stdout: bool,
+    no_check: bool,
 ) -> None:
     """Generate diagrams from a DesignIt file.
 
     FILE: Path to the .dit file to process.
+
+    By default, validation is performed and generation fails if there are errors.
+    Use --no-check to skip validation and generate diagrams anyway.
 
     Supported formats:
       - mermaid: Mermaid diagram text (.mmd)
@@ -346,6 +351,17 @@ def generate(
             )
 
         doc = analyze_file(file)
+
+        # Validate unless --no-check is specified
+        if not no_check:
+            messages = validate(doc)
+            errors, warnings, infos = _group_messages(messages)
+            if errors or warnings or infos:
+                _print_messages(errors, warnings, infos)
+            if errors:
+                _print_summary(errors, warnings, infos)
+                error_console.print("\n[yellow]Use --no-check to generate diagrams anyway[/]")
+                sys.exit(1)
         diagrams, extension = _generate_diagrams(doc, output_format, not no_placeholders)
 
         # Filter diagrams if specified

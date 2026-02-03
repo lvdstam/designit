@@ -195,6 +195,80 @@ class TestGenerateCommand:
             assert "Cannot use --stdout with graphic format" in result.output
 
 
+class TestGenerateValidation:
+    """Tests for generate command validation behavior."""
+
+    @pytest.fixture
+    def invalid_file(self, tmp_path: Path) -> Path:
+        """Create a .dit file with validation errors."""
+        content = """
+scd Context {
+    system API {}
+    external Client {}
+    flow Request: Client -> API
+}
+
+dfd Level0 {
+    refines: Context.API
+    process Handler {}
+    flow Request: -> Handler
+    flow UndefinedFlow: Handler ->
+}
+"""
+        file_path = tmp_path / "invalid.dit"
+        file_path.write_text(content)
+        return file_path
+
+    def test_generate_fails_on_validation_errors_by_default(
+        self, runner: CliRunner, invalid_file: Path, tmp_path: Path
+    ) -> None:
+        """Test that generate fails when there are validation errors."""
+        result = runner.invoke(
+            main,
+            ["generate", str(invalid_file), "-f", "mermaid", "-o", str(tmp_path / "out")],
+        )
+        assert result.exit_code != 0
+        assert "error" in result.output.lower()
+        assert "--no-check" in result.output
+
+    def test_generate_succeeds_with_no_check_flag(
+        self, runner: CliRunner, invalid_file: Path, tmp_path: Path
+    ) -> None:
+        """Test that generate succeeds with --no-check despite validation errors."""
+        output_dir = tmp_path / "out"
+        result = runner.invoke(
+            main,
+            ["generate", str(invalid_file), "-f", "mermaid", "-o", str(output_dir), "--no-check"],
+        )
+        assert result.exit_code == 0
+        assert "Generated" in result.output
+        mmd_files = list(output_dir.glob("*.mmd"))
+        assert len(mmd_files) > 0
+
+    def test_generate_shows_validation_messages_before_failing(
+        self, runner: CliRunner, invalid_file: Path, tmp_path: Path
+    ) -> None:
+        """Test that generate shows validation messages before failing."""
+        result = runner.invoke(
+            main,
+            ["generate", str(invalid_file), "-f", "mermaid", "-o", str(tmp_path / "out")],
+        )
+        assert result.exit_code != 0
+        # Should show the specific error about undefined flow
+        assert "UndefinedFlow" in result.output or "not defined" in result.output.lower()
+
+    def test_generate_valid_file_succeeds_without_no_check(
+        self, runner: CliRunner, sample_file: Path, tmp_path: Path
+    ) -> None:
+        """Test that generate succeeds for valid files without --no-check."""
+        result = runner.invoke(
+            main,
+            ["generate", str(sample_file), "-f", "mermaid", "-o", str(tmp_path)],
+        )
+        assert result.exit_code == 0
+        assert "Generated" in result.output
+
+
 class TestGraphVizRendering:
     """Tests for GraphViz rendering functionality (REQ-CLI-025)."""
 

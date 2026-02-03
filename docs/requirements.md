@@ -1427,6 +1427,21 @@ Generate command shall support printing output to stdout.
 
 ---
 
+#### REQ-CLI-026: No Check Flag [DONE]
+Generate command shall validate by default and support skipping validation.
+
+**Acceptance Criteria:**
+- By default, `generate` runs validation before generating diagrams
+- If validation errors exist, generation fails with exit code 1
+- Flag: `--no-check`
+- When set, validation is skipped and diagrams are generated even with errors
+- Validation messages (errors, warnings, info) are printed before failing
+- Hint about `--no-check` is shown when generation fails due to validation
+
+**Implementation:** `src/designit/cli.py:generate()`
+
+---
+
 #### REQ-CLI-025: GraphViz Rendering [DONE]
 Generate command shall render graphic formats using GraphViz.
 

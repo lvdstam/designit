@@ -92,6 +92,7 @@ def _extract_markdown_blocks(source: str) -> tuple[str, dict[str, str]]:
 
     Scans for 'markdown {' patterns and extracts content using brace counting.
     Handles escaped braces (\\{ and \\}) and nested balanced braces.
+    Preserves line numbers by padding with newlines.
 
     Returns:
         Tuple of (modified_source, placeholder_map)
@@ -147,8 +148,17 @@ def _extract_markdown_blocks(source: str) -> tuple[str, dict[str, str]]:
         placeholders[placeholder] = content
         placeholder_index += 1
 
-        # Add the markdown declaration with placeholder
-        result_parts.append(f"markdown {placeholder}")
+        # Count newlines in the original markdown block (from 'markdown' to '}')
+        original_block = source[match.start() : i]
+        newline_count = original_block.count("\n")
+
+        # The placeholder line is: "markdown __MARKDOWN_n__"
+        # We need to add (newline_count) newlines to preserve line numbers
+        # for everything that comes after this block
+        padding = "\n" * newline_count
+
+        # Add the markdown declaration with placeholder and padding
+        result_parts.append(f"markdown {placeholder}{padding}")
 
         pos = i
 

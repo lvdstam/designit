@@ -105,6 +105,46 @@ markdown {
         assert md.location is not None
         assert md.location.line == 2
 
+    def test_line_numbers_preserved_after_multiline_markdown(self) -> None:
+        """Line numbers should be correct for elements after multi-line markdown blocks.
+
+        Regression test: The markdown extraction was replacing multi-line blocks
+        with single-line placeholders, causing all subsequent line numbers to be
+        offset by the number of removed newlines.
+        """
+        source = """scd Context {
+    system API {}
+}
+
+markdown {
+    Line 1
+    Line 2
+    Line 3
+    Line 4
+    Line 5
+}
+
+erd DataModel {
+    entity User {
+        id: integer
+    }
+}
+"""
+        doc = parse_string(source)
+
+        # Verify we parsed the ERD
+        assert len(doc.erds) == 1
+        erd = doc.erds[0]
+
+        # The entity User should be on line 14 (after markdown block ends at line 11,
+        # empty line 12, erd on line 13, entity on line 14)
+        assert len(erd.entities) == 1
+        entity = erd.entities[0]
+        assert entity.location is not None
+        assert entity.location.line == 14, (
+            f"Entity should be on line 14, got {entity.location.line}"
+        )
+
 
 class TestTemplateParser:
     """Tests for template expression parsing."""
