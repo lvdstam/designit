@@ -15,7 +15,7 @@ from designit.semantic.analyzer import analyze_string
 from designit.semantic.validator import validate
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger("designit-lsp")
 
 # Create the language server
