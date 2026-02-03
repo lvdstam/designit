@@ -352,3 +352,99 @@ class TestMermaidSCDElementStyling:
         # System should have name only, not description
         assert "API" in output
         assert "The API system" not in output
+
+
+class TestMermaidDFDProcessStyling:
+    """Tests for Mermaid DFD process styling (REQ-GEN-060, REQ-GEN-063)."""
+
+    def test_process_uses_circle_shape(self) -> None:
+        """Processes should use double-parentheses circle syntax (REQ-GEN-060)."""
+        source = """
+        datadict { Data = { value: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Data: User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Data: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        generator = MermaidGenerator()
+        output = generator.generate_dfd(doc.dfds["Level0"])
+
+        # Circle syntax: (("label"))
+        assert '(("Handler"))' in output
+
+    def test_process_without_description(self) -> None:
+        """Process description should not appear in diagram (REQ-GEN-063)."""
+        source = """
+        datadict { Data = { value: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Data: User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler { description: "Handles incoming data" }
+            flow Data: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        generator = MermaidGenerator()
+        output = generator.generate_dfd(doc.dfds["Level0"])
+
+        assert "Handler" in output
+        assert "Handles incoming data" not in output
+
+
+class TestGraphVizDFDProcessStyling:
+    """Tests for GraphViz DFD process styling (REQ-GEN-060, REQ-GEN-063)."""
+
+    def test_process_uses_circle_shape(self) -> None:
+        """Processes should use shape=circle (REQ-GEN-060)."""
+        source = """
+        datadict { Data = { value: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Data: User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Data: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        generator = GraphVizGenerator()
+        output = generator.generate_dfd(doc.dfds["Level0"])
+
+        assert "shape=circle" in output
+        assert "shape=ellipse" not in output
+
+    def test_process_without_description(self) -> None:
+        """Process description should not appear in diagram (REQ-GEN-063)."""
+        source = """
+        datadict { Data = { value: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Data: User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler { description: "Handles incoming data" }
+            flow Data: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        generator = GraphVizGenerator()
+        output = generator.generate_dfd(doc.dfds["Level0"])
+
+        assert '"Handler"' in output
+        assert "Handles incoming data" not in output

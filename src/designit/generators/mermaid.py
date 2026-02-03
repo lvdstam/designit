@@ -90,9 +90,8 @@ class MermaidGenerator:
                 continue
             safe_id = self._safe_id(name)
             label = self._escape(name)
-            if proc.description:
-                label += f"<br/>{self._escape(proc.description)}"
-            out.write(f'    {safe_id}("{label}")\n')
+            # Note: description intentionally not included in diagram (REQ-GEN-063)
+            out.write(f'    {safe_id}(("{label}"))\n')
 
     def _write_dfd_datastores(self, dfd: DFDModel, out: TextIO) -> None:
         """Write datastore nodes to Mermaid output."""

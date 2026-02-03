@@ -90,9 +90,8 @@ class GraphVizGenerator:
                 continue
             style = self._placeholder_style() if proc.is_placeholder else ""
             label = self._escape(name)
-            if proc.description:
-                label += f"\\n{self._escape(proc.description)}"
-            out.write(f'  "{name}" [shape=ellipse label="{label}" {style}];\n')
+            # Note: description intentionally not included in diagram (REQ-GEN-063)
+            out.write(f'  "{name}" [shape=circle label="{label}" {style}];\n')
 
     def _write_dfd_datastores(self, dfd: DFDModel, out: TextIO) -> None:
         """Write datastore nodes to DOT output."""

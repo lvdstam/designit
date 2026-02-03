@@ -1001,7 +1001,7 @@ DFDs shall be generated as Mermaid flowcharts.
 **Acceptance Criteria:**
 - Flowchart direction: TB (top to bottom)
 - Externals: rectangle shape `["label"]`
-- Processes: rounded shape `("label")`
+- Processes: circle shape `(("label"))`
 - Datastores: cylinder shape `[("label")]`
 - Flows: arrows with labels
 
@@ -1108,7 +1108,7 @@ DFDs shall be generated as GraphViz directed graphs.
 
 **Acceptance Criteria:**
 - Externals: `shape=box`
-- Processes: `shape=ellipse`
+- Processes: `shape=circle`
 - Datastores: `shape=cylinder`
 - Flows as labeled edges
 
@@ -2208,13 +2208,17 @@ When diagram format is `mmd`, diagrams shall be written as `.mmd` files and refe
 
 These are lower priority improvements identified during development:
 
-#### REQ-GEN-060: DFD Process Circle Shape [TODO]
-DFD processes shall be rendered as circles (not ellipses).
+#### REQ-GEN-060: DFD Process Circle Shape [DONE]
+DFD processes shall be rendered as circles that adapt to content.
 
 **Acceptance Criteria:**
-- GraphViz: Use `shape=circle` with `fixedsize=true`
-- Mermaid: Adjust styling for circular appearance
+- GraphViz: Use `shape=circle` (adapts to label size)
+- Mermaid: Use `(("label"))` syntax (adapts to label size)
 - Process name displayed inside circle
+
+**Implementation:**
+- `src/designit/generators/mermaid.py:MermaidGenerator._write_dfd_processes()`
+- `src/designit/generators/graphviz.py:GraphVizGenerator._write_dfd_processes()`
 
 ---
 
@@ -2243,12 +2247,16 @@ SCD system shall be rendered as a box without embedded description.
 
 ---
 
-#### REQ-GEN-063: DFD Process Without Description [TODO]
+#### REQ-GEN-063: DFD Process Without Description [DONE]
 DFD processes shall be rendered without embedded descriptions.
 
 **Acceptance Criteria:**
 - Process rendered with name only
 - Description available via document generation
+
+**Implementation:**
+- `src/designit/generators/mermaid.py:MermaidGenerator._write_dfd_processes()`
+- `src/designit/generators/graphviz.py:GraphVizGenerator._write_dfd_processes()`
 
 ---
 
