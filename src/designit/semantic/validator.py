@@ -261,7 +261,7 @@ class Validator:
 
             # Validate flow directions and coverage
             self._validate_dfd_flow_directions(dfd, parent_flows)
-            self._validate_dfd_inbound_handlers(dfd, dfd_name, parent_flows)
+            self._validate_dfd_inbound_handlers(dfd, dfd_name, parent_flows, doc)
 
     def _get_parent_scd_flows(
         self, parent_scd: SCDModel, system_name: str
@@ -339,28 +339,292 @@ class Validator:
         dfd: DFDModel,
         dfd_name: str,
         parent_flows: tuple[dict[str, str], dict[str, str], dict[str, str]],
+        doc: DesignDocument,
     ) -> None:
-        """Validate that inbound flows are handled exactly once."""
+        """Validate that inbound flows are handled exactly once.
+
+        Supports flow type decomposition (REQ-SEM-090, REQ-SEM-091, REQ-SEM-092):
+        - Child can use parent type directly
+        - Child can decompose union types into subtypes
+        - Mixing parent type with subtypes is an error
+        """
         parent_inbound, _, parent_bidirectional = parent_flows
         inbound_handler_counts: dict[str, list[str]] = getattr(dfd, "_inbound_flow_handlers", {})
 
         # Check inbound and bidirectional flows (both require exactly one handler)
         for flow_name in list(parent_inbound.keys()) + list(parent_bidirectional.keys()):
-            handlers = inbound_handler_counts.get(flow_name, [])
+            self._validate_flow_coverage_with_decomposition(
+                dfd, dfd_name, flow_name, inbound_handler_counts, doc
+            )
+
+    def _validate_flow_coverage_with_decomposition(
+        self,
+        dfd: DFDModel,
+        dfd_name: str,
+        parent_flow_name: str,
+        inbound_handlers: dict[str, list[str]],
+        doc: DesignDocument,
+    ) -> None:
+        """Validate coverage for a single parent flow, supporting type decomposition.
+
+        REQ-SEM-090: Flow type decomposition in refinements
+        REQ-SEM-091: Mixing prohibition
+        REQ-SEM-092: Nested union decomposition
+        """
+        # Check if the parent flow type is handled directly
+        direct_handlers = inbound_handlers.get(parent_flow_name, [])
+
+        # Get all subtypes at all levels for this flow type
+        all_subtypes = self._get_all_union_subtypes(parent_flow_name, doc)
+
+        if not all_subtypes:
+            # Not a union type - use simple validation
+            if len(direct_handlers) == 0:
+                self._error(
+                    f"Inbound flow '{parent_flow_name}' from parent not handled "
+                    f"in DFD '{dfd_name}'",
+                    dfd_name,
+                    dfd.source_file,
+                    dfd.refines.line if dfd.refines else dfd.line,
+                )
+            elif len(direct_handlers) > 1:
+                self._error(
+                    f"Inbound flow '{parent_flow_name}' handled by multiple processes "
+                    f"in DFD '{dfd_name}'",
+                    dfd_name,
+                    dfd.source_file,
+                    dfd.line,
+                )
+            return
+
+        # It's a union type - check for decomposition
+        # Find which subtypes are used
+        used_subtypes: set[str] = set()
+        for subtype in all_subtypes:
+            if subtype in inbound_handlers and inbound_handlers[subtype]:
+                used_subtypes.add(subtype)
+
+        # Check for mixing (REQ-SEM-091)
+        if direct_handlers and used_subtypes:
+            # Using both parent type and subtypes - ERROR
+            self._error(
+                f"Flow type '{parent_flow_name}' cannot be mixed with its subtype "
+                f"'{next(iter(used_subtypes))}' in refinement of "
+                f"'{dfd.refines.diagram_name}.{dfd.refines.element_name}'"
+                if dfd.refines
+                else f"'{dfd_name}'",
+                dfd_name,
+                dfd.source_file,
+                dfd.refines.line if dfd.refines else dfd.line,
+            )
+            return
+
+        if direct_handlers:
+            # Using parent type directly - validate normally
+            if len(direct_handlers) > 1:
+                self._error(
+                    f"Inbound flow '{parent_flow_name}' handled by multiple processes "
+                    f"in DFD '{dfd_name}'",
+                    dfd_name,
+                    dfd.source_file,
+                    dfd.line,
+                )
+            return
+
+        if used_subtypes:
+            # Using decomposition - validate that it's at one level (REQ-SEM-092)
+            # and all subtypes at that level are covered
+            self._validate_decomposition_coverage(
+                dfd, dfd_name, parent_flow_name, used_subtypes, inbound_handlers, doc
+            )
+            return
+
+        # Neither parent type nor any subtypes handled - ERROR
+        self._error(
+            f"Inbound flow '{parent_flow_name}' from parent not handled in DFD '{dfd_name}'",
+            dfd_name,
+            dfd.source_file,
+            dfd.refines.line if dfd.refines else dfd.line,
+        )
+
+    def _validate_decomposition_coverage(
+        self,
+        dfd: DFDModel,
+        dfd_name: str,
+        parent_flow_name: str,
+        used_subtypes: set[str],
+        inbound_handlers: dict[str, list[str]],
+        doc: DesignDocument,
+    ) -> None:
+        """Validate that decomposition covers all subtypes at one level.
+
+        REQ-SEM-090: All subtypes must be covered
+        REQ-SEM-091: No mixing of levels
+        REQ-SEM-092: Decomposition may stop at any level
+        """
+        # Find the decomposition level by checking which union level the used subtypes belong to
+        immediate_subtypes = self._get_immediate_union_subtypes(parent_flow_name, doc)
+
+        if not immediate_subtypes:
+            return  # Not a union, shouldn't happen here
+
+        # Check for level mixing (REQ-SEM-091, REQ-SEM-092)
+        # For each immediate subtype, check if it or any of its subtypes are used
+        for imm_subtype in immediate_subtypes:
+            imm_subtype_subtypes = self._get_all_union_subtypes(imm_subtype, doc)
+
+            # Is the immediate subtype itself used?
+            imm_used = imm_subtype in used_subtypes
+
+            # Are any of its subtypes used?
+            nested_used = imm_subtype_subtypes & used_subtypes
+
+            if imm_used and nested_used:
+                # Mixing immediate subtype with its own subtypes - ERROR
+                self._error(
+                    f"Flow type '{imm_subtype}' cannot be mixed with its subtype "
+                    f"'{next(iter(nested_used))}' in refinement of "
+                    f"'{dfd.refines.diagram_name}.{dfd.refines.element_name}'"
+                    if dfd.refines
+                    else f"'{dfd_name}'",
+                    dfd_name,
+                    dfd.source_file,
+                    dfd.refines.line if dfd.refines else dfd.line,
+                )
+                return
+
+        # Determine which level of decomposition is being used
+        # and validate that ALL subtypes at that level are covered
+        self._validate_complete_level_coverage(
+            dfd, dfd_name, parent_flow_name, used_subtypes, inbound_handlers, doc
+        )
+
+    def _validate_complete_level_coverage(
+        self,
+        dfd: DFDModel,
+        dfd_name: str,
+        parent_flow_name: str,
+        used_subtypes: set[str],
+        inbound_handlers: dict[str, list[str]],
+        doc: DesignDocument,
+    ) -> None:
+        """Validate that all subtypes at the decomposition level are covered."""
+        # Get the required subtypes at the level being used
+        required_subtypes = self._get_required_subtypes_for_coverage(
+            parent_flow_name, used_subtypes, doc
+        )
+
+        # Check each required subtype is handled exactly once
+        for subtype in required_subtypes:
+            handlers = inbound_handlers.get(subtype, [])
             if len(handlers) == 0:
                 self._error(
-                    f"Inbound flow '{flow_name}' from parent not handled in DFD '{dfd_name}'",
+                    f"Inbound flow '{parent_flow_name}' (decomposed) is missing "
+                    f"coverage for subtype '{subtype}'",
                     dfd_name,
                     dfd.source_file,
                     dfd.refines.line if dfd.refines else dfd.line,
                 )
             elif len(handlers) > 1:
                 self._error(
-                    f"Inbound flow '{flow_name}' handled by multiple processes in DFD '{dfd_name}'",
+                    f"Inbound flow '{subtype}' handled by multiple processes in DFD '{dfd_name}'",
                     dfd_name,
                     dfd.source_file,
                     dfd.line,
                 )
+
+    def _get_required_subtypes_for_coverage(
+        self,
+        parent_type: str,
+        used_subtypes: set[str],
+        doc: DesignDocument,
+    ) -> set[str]:
+        """Determine which subtypes are required for complete coverage.
+
+        This handles nested unions by finding the decomposition level.
+        """
+        immediate = self._get_immediate_union_subtypes(parent_type, doc)
+
+        if not immediate:
+            return {parent_type}
+
+        required: set[str] = set()
+
+        for imm in immediate:
+            # Check if this immediate subtype is used
+            if imm in used_subtypes:
+                required.add(imm)
+            else:
+                # Check if any nested subtypes are used
+                nested = self._get_all_union_subtypes(imm, doc)
+                if nested & used_subtypes:
+                    # Recurse into this branch
+                    required.update(
+                        self._get_required_subtypes_for_coverage(imm, used_subtypes, doc)
+                    )
+                else:
+                    # This branch has no used subtypes - require the immediate subtype
+                    required.add(imm)
+
+        return required
+
+    def _get_immediate_union_subtypes(self, type_name: str, doc: DesignDocument) -> set[str]:
+        """Get immediate union alternatives for a type (not recursive)."""
+        from designit.model.datadict import TypeRef, UnionType
+
+        if not doc.data_dictionary:
+            return set()
+
+        dd = doc.data_dictionary
+        defn = dd.definitions.get(type_name)
+
+        if not defn or not defn.is_union or not isinstance(defn.definition, UnionType):
+            return set()
+
+        result: set[str] = set()
+        for alt in defn.definition.alternatives:
+            if isinstance(alt, TypeRef):
+                result.add(alt.qualified_name)
+            elif isinstance(alt, str) and not (alt.startswith('"') or alt.startswith("'")):
+                # Unquoted string = type reference
+                result.add(alt)
+            # Quoted strings (enum literals) are not subtypes for decomposition
+
+        return result
+
+    def _get_all_union_subtypes(self, type_name: str, doc: DesignDocument) -> set[str]:
+        """Get all union alternatives recursively (for nested unions)."""
+        from designit.model.datadict import TypeRef, UnionType
+
+        if not doc.data_dictionary:
+            return set()
+
+        dd = doc.data_dictionary
+        result: set[str] = set()
+        visited: set[str] = set()
+
+        def collect(name: str) -> None:
+            if name in visited:
+                return
+            visited.add(name)
+
+            defn = dd.definitions.get(name)
+            if not defn or not defn.is_union or not isinstance(defn.definition, UnionType):
+                return
+
+            for alt in defn.definition.alternatives:
+                if isinstance(alt, TypeRef):
+                    alt_name = alt.qualified_name
+                elif isinstance(alt, str) and not (alt.startswith('"') or alt.startswith("'")):
+                    alt_name = alt
+                else:
+                    continue  # Skip enum literals
+
+                result.add(alt_name)
+                collect(alt_name)  # Recurse into nested unions
+
+        collect(type_name)
+        return result
 
     def _validate_erds(self, doc: DesignDocument) -> None:
         """Validate all ERDs."""
@@ -626,18 +890,30 @@ class Validator:
         builtin_types: set[str],
     ) -> None:
         """Validate a single type reference in a definition."""
+        from designit.model.datadict import UnionType
+
         # Resolve the type reference using namespace-first lookup
         resolved_name = self._resolve_type_ref(type_ref, defn.namespace, dd.definitions)
 
         if resolved_name is None and type_ref.name not in builtin_types:
             # Check if it's a string literal (for unions) - these are preserved as strings
             if not (type_ref.name.startswith('"') or type_ref.name.startswith("'")):
-                self._warning(
-                    f"Type '{def_name}' references undefined type '{type_ref.qualified_name}'",
-                    def_name,
-                    defn.source_file,
-                    defn.line,
-                )
+                # REQ-SEM-069: Union type references are ERRORs (needed for flow decomposition)
+                # REQ-SEM-050: Other type references (struct fields, arrays) are WARNINGs
+                if defn.is_union and isinstance(defn.definition, UnionType):
+                    self._error(
+                        f"Type '{def_name}' references undefined type '{type_ref.qualified_name}'",
+                        def_name,
+                        defn.source_file,
+                        defn.line,
+                    )
+                else:
+                    self._warning(
+                        f"Type '{def_name}' references undefined type '{type_ref.qualified_name}'",
+                        def_name,
+                        defn.source_file,
+                        defn.line,
+                    )
             return
 
         # REQ-SEM-064: Cross-namespace reference restriction

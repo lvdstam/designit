@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from designit.model.base import BaseElement, ElementReference
 
 # Type aliases for flow keys
-FlowType = Literal["internal", "inbound", "outbound"]
+FlowType = Literal["internal", "inbound", "outbound", "bidirectional"]
 FlowKey = tuple[str, FlowType]
 
 

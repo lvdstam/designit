@@ -6,7 +6,7 @@ import io
 from typing import TextIO
 
 from designit.model.base import DesignDocument
-from designit.model.dfd import DFDModel
+from designit.model.dfd import DataFlow, DFDModel
 from designit.model.erd import ERDModel
 from designit.model.scd import SCDModel
 from designit.model.std import STDModel
@@ -138,7 +138,7 @@ class MermaidGenerator:
         """
         boundary_nodes: set[str] = set()
         for (flow_name, flow_type), flow in dfd.flows.items():
-            if flow_type not in ("inbound", "outbound"):
+            if flow_type not in ("inbound", "outbound", "bidirectional"):
                 continue
             # Skip outbound if it's part of a bidirectional pair (handled with inbound)
             if flow_name in bidirectional and flow_type == "outbound":
@@ -156,28 +156,76 @@ class MermaidGenerator:
             label = self._escape(flow_name)
 
             if flow_name in bidirectional:
-                if flow_name in rendered_bidirectional:
-                    continue
-                rendered_bidirectional.add(flow_name)
-                boundary_id = f"_boundary_{self._safe_id(flow_name)}"
-                process_id = self._safe_id(bidirectional[flow_name])
-                out.write(f'    {boundary_id} <-->|" {label} "| {process_id}\n')
+                if flow_name not in rendered_bidirectional:
+                    rendered_bidirectional.add(flow_name)
+                    self._write_dfd_detected_bidirectional(flow_name, bidirectional, label, out)
+            elif flow_type == "bidirectional":
+                self._write_dfd_bidirectional_flow(flow_name, flow, label, out)
             elif flow_type == "inbound":
-                assert flow.target is not None, "Inbound flow must have a target"
-                source_id = f"_boundary_{self._safe_id(flow_name)}"
-                target_id = self._safe_id(flow.target.name)
-                out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
+                self._write_dfd_inbound_flow(flow_name, flow, label, out)
             elif flow_type == "outbound":
-                assert flow.source is not None, "Outbound flow must have a source"
-                source_id = self._safe_id(flow.source.name)
-                target_id = f"_boundary_{self._safe_id(flow_name)}"
-                out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
+                self._write_dfd_outbound_flow(flow_name, flow, label, out)
             else:  # internal
-                assert flow.source is not None, "Internal flow must have a source"
-                assert flow.target is not None, "Internal flow must have a target"
-                source_id = self._safe_id(flow.source.name)
-                target_id = self._safe_id(flow.target.name)
-                out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
+                self._write_dfd_internal_flow(flow, label, out)
+
+    def _write_dfd_detected_bidirectional(
+        self, flow_name: str, bidirectional: dict[str, str], label: str, out: TextIO
+    ) -> None:
+        """Write a detected bidirectional flow (from inbound/outbound pair)."""
+        boundary_id = f"_boundary_{self._safe_id(flow_name)}"
+        process_id = self._safe_id(bidirectional[flow_name])
+        out.write(f'    {boundary_id} <-->|" {label} "| {process_id}\n')
+
+    def _write_dfd_bidirectional_flow(
+        self, flow_name: str, flow: DataFlow, label: str, out: TextIO
+    ) -> None:
+        """Write an explicit bidirectional boundary flow."""
+        if flow.target is None:
+            raise ValueError(self._flow_error("Bidirectional flow", flow, "must have a target"))
+        boundary_id = f"_boundary_{self._safe_id(flow_name)}"
+        process_id = self._safe_id(flow.target.name)
+        out.write(f'    {boundary_id} <-->|" {label} "| {process_id}\n')
+
+    def _write_dfd_inbound_flow(
+        self, flow_name: str, flow: DataFlow, label: str, out: TextIO
+    ) -> None:
+        """Write an inbound boundary flow."""
+        if flow.target is None:
+            raise ValueError(self._flow_error("Inbound flow", flow, "must have a target"))
+        source_id = f"_boundary_{self._safe_id(flow_name)}"
+        target_id = self._safe_id(flow.target.name)
+        out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
+
+    def _write_dfd_outbound_flow(
+        self, flow_name: str, flow: DataFlow, label: str, out: TextIO
+    ) -> None:
+        """Write an outbound boundary flow."""
+        if flow.source is None:
+            raise ValueError(self._flow_error("Outbound flow", flow, "must have a source"))
+        source_id = self._safe_id(flow.source.name)
+        target_id = f"_boundary_{self._safe_id(flow_name)}"
+        out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
+
+    def _write_dfd_internal_flow(self, flow: DataFlow, label: str, out: TextIO) -> None:
+        """Write an internal flow between two elements in the DFD."""
+        if flow.source is None:
+            raise ValueError(self._flow_error("Internal flow", flow, "must have a source"))
+        if flow.target is None:
+            raise ValueError(self._flow_error("Internal flow", flow, "must have a target"))
+        source_id = self._safe_id(flow.source.name)
+        target_id = self._safe_id(flow.target.name)
+        out.write(f'    {source_id} -->|" {label} "| {target_id}\n')
+
+    def _flow_error(self, flow_type_desc: str, flow: DataFlow, message: str) -> str:
+        """Format a flow error message with location info if available."""
+        loc = ""
+        if flow.source_file and flow.line:
+            loc = f" at {flow.source_file}:{flow.line}"
+        elif flow.source_file:
+            loc = f" in {flow.source_file}"
+        elif flow.line:
+            loc = f" at line {flow.line}"
+        return f"{flow_type_desc} '{flow.name}' {message}{loc}"
 
     def _collect_dfd_placeholder_ids(self, dfd: DFDModel) -> list[str]:
         """Collect IDs of all placeholder elements in a DFD."""

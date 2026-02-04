@@ -2629,8 +2629,8 @@ class TestUnionTypeValidation:
         assert len(errors) >= 1
         assert any("mixes enum literals with type references" in e.message for e in errors)
 
-    def test_type_union_undefined_type_warning(self) -> None:
-        """REQ-SEM-069: Type union with undefined type should produce warning."""
+    def test_type_union_undefined_type_error(self) -> None:
+        """REQ-SEM-069: Type union with undefined type should produce error."""
         source = """
         datadict {
             Result = Success | UndefinedType
@@ -2638,12 +2638,12 @@ class TestUnionTypeValidation:
         """
         doc = analyze_string(source)
         messages = validate(doc)
-        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
-        assert len(warnings) >= 1
-        assert any("UndefinedType" in w.message for w in warnings)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("UndefinedType" in e.message for e in errors)
 
-    def test_type_union_multiple_undefined_types_warning(self) -> None:
-        """REQ-SEM-069: Type union with multiple undefined types should warn for each."""
+    def test_type_union_multiple_undefined_types_error(self) -> None:
+        """REQ-SEM-069: Type union with multiple undefined types should error for each."""
         source = """
         datadict {
             Status = UndefinedType1 | UndefinedType2
@@ -2651,10 +2651,26 @@ class TestUnionTypeValidation:
         """
         doc = analyze_string(source)
         messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 2
+        assert any("UndefinedType1" in e.message for e in errors)
+        assert any("UndefinedType2" in e.message for e in errors)
+
+    def test_struct_undefined_type_warning(self) -> None:
+        """REQ-SEM-050: Struct with undefined type should produce warning (not error)."""
+        source = """
+        datadict {
+            Person = { address: UndefinedAddress }
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
         warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
-        assert len(warnings) >= 2
-        assert any("UndefinedType1" in w.message for w in warnings)
-        assert any("UndefinedType2" in w.message for w in warnings)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(warnings) >= 1
+        assert any("UndefinedAddress" in w.message for w in warnings)
+        # Should NOT be an error
+        assert not any("UndefinedAddress" in e.message for e in errors)
 
     def test_enum_union_no_type_validation(self) -> None:
         """Enum literals should not be validated as type references."""
@@ -2669,3 +2685,306 @@ class TestUnionTypeValidation:
         warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
         type_ref_warnings = [w for w in warnings if "undefined type" in w.message.lower()]
         assert len(type_ref_warnings) == 0, f"Unexpected type ref warnings: {type_ref_warnings}"
+
+
+class TestFlowTypeDecomposition:
+    """Tests for flow type decomposition in refinements (REQ-SEM-090, 091, 092)."""
+
+    def test_parent_type_direct_use_valid(self) -> None:
+        """REQ-SEM-090: Child DFD can use parent flow type directly."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            BankTransfer = { iban: string }
+            PaymentMethod = CreditCard | BankTransfer
+        }
+        scd Context {
+            system PaymentSystem {}
+            external Customer {}
+            flow PaymentMethod: Customer -> PaymentSystem
+        }
+        dfd DirectUse {
+            refines: Context.PaymentSystem
+            process HandlePayment {}
+            flow PaymentMethod: -> HandlePayment
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        # Filter out unrelated errors (orphan elements, etc.)
+        coverage_errors = [
+            e for e in errors if "not handled" in e.message or "decomposed" in e.message
+        ]
+        assert len(coverage_errors) == 0, (
+            f"Unexpected errors: {[e.message for e in coverage_errors]}"
+        )
+
+    def test_decomposed_all_subtypes_valid(self) -> None:
+        """REQ-SEM-090: Child DFD can decompose into all subtypes."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            BankTransfer = { iban: string }
+            PaymentMethod = CreditCard | BankTransfer
+        }
+        scd Context {
+            system PaymentSystem {}
+            external Customer {}
+            flow PaymentMethod: Customer -> PaymentSystem
+        }
+        dfd Decomposed {
+            refines: Context.PaymentSystem
+            process ProcessCards {}
+            process ProcessBank {}
+            flow CreditCard: -> ProcessCards
+            flow BankTransfer: -> ProcessBank
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        coverage_errors = [
+            e for e in errors if "not handled" in e.message or "decomposed" in e.message
+        ]
+        assert len(coverage_errors) == 0, (
+            f"Unexpected errors: {[e.message for e in coverage_errors]}"
+        )
+
+    def test_decomposed_missing_subtype_error(self) -> None:
+        """REQ-SEM-090: Missing subtype in decomposition should produce error."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            BankTransfer = { iban: string }
+            Cash = { amount: decimal }
+            PaymentMethod = CreditCard | BankTransfer | Cash
+        }
+        scd Context {
+            system PaymentSystem {}
+            external Customer {}
+            flow PaymentMethod: Customer -> PaymentSystem
+        }
+        dfd Incomplete {
+            refines: Context.PaymentSystem
+            process ProcessCards {}
+            process ProcessBank {}
+            flow CreditCard: -> ProcessCards
+            flow BankTransfer: -> ProcessBank
+            // Missing: flow Cash: -> SomeProcess
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert any("Cash" in e.message and "missing" in e.message.lower() for e in errors), (
+            f"Expected error about missing 'Cash' subtype: {[e.message for e in errors]}"
+        )
+
+    def test_mixed_parent_and_subtype_error(self) -> None:
+        """REQ-SEM-091: Mixing parent type with subtypes should produce error."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            BankTransfer = { iban: string }
+            PaymentMethod = CreditCard | BankTransfer
+        }
+        scd Context {
+            system PaymentSystem {}
+            external Customer {}
+            flow PaymentMethod: Customer -> PaymentSystem
+        }
+        dfd MixedInvalid {
+            refines: Context.PaymentSystem
+            process HandleAll {}
+            process HandleCards {}
+            flow PaymentMethod: -> HandleAll
+            flow CreditCard: -> HandleCards
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert any("cannot be mixed" in e.message for e in errors), (
+            f"Expected error about mixing parent with subtype: {[e.message for e in errors]}"
+        )
+
+    def test_nested_union_level1_decomposition_valid(self) -> None:
+        """REQ-SEM-092: Decomposition can stop at intermediate level."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            DebitCard = { number: string }
+            CardPayment = CreditCard | DebitCard
+            BankTransfer = { iban: string }
+            PaymentMethod = CardPayment | BankTransfer
+        }
+        scd Context {
+            system PaymentSystem {}
+            external Customer {}
+            flow PaymentMethod: Customer -> PaymentSystem
+        }
+        dfd Level1 {
+            refines: Context.PaymentSystem
+            process ProcessCards {}
+            process ProcessBank {}
+            flow CardPayment: -> ProcessCards
+            flow BankTransfer: -> ProcessBank
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        coverage_errors = [
+            e for e in errors if "not handled" in e.message or "decomposed" in e.message
+        ]
+        assert len(coverage_errors) == 0, (
+            f"Unexpected errors: {[e.message for e in coverage_errors]}"
+        )
+
+    def test_nested_union_leaf_level_decomposition_valid(self) -> None:
+        """REQ-SEM-092: Decomposition can go to leaf level."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            DebitCard = { number: string }
+            CardPayment = CreditCard | DebitCard
+            BankTransfer = { iban: string }
+            PaymentMethod = CardPayment | BankTransfer
+        }
+        scd Context {
+            system PaymentSystem {}
+            external Customer {}
+            flow PaymentMethod: Customer -> PaymentSystem
+        }
+        dfd LeafLevel {
+            refines: Context.PaymentSystem
+            process ProcessCredit {}
+            process ProcessDebit {}
+            process ProcessBank {}
+            flow CreditCard: -> ProcessCredit
+            flow DebitCard: -> ProcessDebit
+            flow BankTransfer: -> ProcessBank
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        coverage_errors = [
+            e for e in errors if "not handled" in e.message or "decomposed" in e.message
+        ]
+        assert len(coverage_errors) == 0, (
+            f"Unexpected errors: {[e.message for e in coverage_errors]}"
+        )
+
+    def test_nested_union_mixed_levels_error(self) -> None:
+        """REQ-SEM-092: Mixing levels in nested unions should produce error."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            DebitCard = { number: string }
+            CardPayment = CreditCard | DebitCard
+            BankTransfer = { iban: string }
+            PaymentMethod = CardPayment | BankTransfer
+        }
+        scd Context {
+            system PaymentSystem {}
+            external Customer {}
+            flow PaymentMethod: Customer -> PaymentSystem
+        }
+        dfd MixedLevels {
+            refines: Context.PaymentSystem
+            process ProcessCards {}
+            process ProcessCredit {}
+            process ProcessBank {}
+            flow CardPayment: -> ProcessCards
+            flow CreditCard: -> ProcessCredit
+            flow BankTransfer: -> ProcessBank
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert any("cannot be mixed" in e.message for e in errors), (
+            f"Expected error about mixing levels: {[e.message for e in errors]}"
+        )
+
+    def test_decomposition_multiple_handlers_error(self) -> None:
+        """REQ-SEM-090: Subtype handled by multiple processes should produce error."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            BankTransfer = { iban: string }
+            PaymentMethod = CreditCard | BankTransfer
+        }
+        scd Context {
+            system PaymentSystem {}
+            external Customer {}
+            flow PaymentMethod: Customer -> PaymentSystem
+        }
+        dfd MultipleHandlers {
+            refines: Context.PaymentSystem
+            process ProcessCards1 {}
+            process ProcessCards2 {}
+            process ProcessBank {}
+            flow CreditCard: -> ProcessCards1
+            flow CreditCard: -> ProcessCards2
+            flow BankTransfer: -> ProcessBank
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert any("multiple processes" in e.message for e in errors), (
+            f"Expected error about multiple handlers: {[e.message for e in errors]}"
+        )
+
+    def test_non_union_flow_unchanged_behavior(self) -> None:
+        """Non-union flow types should work as before (no decomposition)."""
+        source = """
+        datadict {
+            Request = { data: string }
+        }
+        scd Context {
+            system MySystem {}
+            external User {}
+            flow Request: User -> MySystem
+        }
+        dfd Normal {
+            refines: Context.MySystem
+            process HandleRequest {}
+            flow Request: -> HandleRequest
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        coverage_errors = [e for e in errors if "not handled" in e.message]
+        assert len(coverage_errors) == 0, (
+            f"Unexpected errors: {[e.message for e in coverage_errors]}"
+        )
+
+    def test_enum_union_not_decomposable(self) -> None:
+        """Enum unions (quoted strings) should not be decomposable."""
+        source = """
+        datadict {
+            Status = "pending" | "approved"
+        }
+        scd Context {
+            system MySystem {}
+            external User {}
+            flow Status: User -> MySystem
+        }
+        dfd Normal {
+            refines: Context.MySystem
+            process HandleStatus {}
+            flow Status: -> HandleStatus
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        coverage_errors = [e for e in errors if "not handled" in e.message]
+        assert len(coverage_errors) == 0, (
+            f"Unexpected errors: {[e.message for e in coverage_errors]}"
+        )

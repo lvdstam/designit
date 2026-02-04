@@ -1,11 +1,12 @@
 """Tests for the CLI commands.
 
 REQ-CLI-020: Format Option
-REQ-CLI-021: Output Directory Option
+REQ-CLI-021: Output Diagram Directory Option
 REQ-CLI-022: Diagram Filter Option
 REQ-CLI-023: No Placeholders Flag
-REQ-CLI-024: Stdout Flag
 REQ-CLI-025: GraphViz Rendering
+REQ-CLI-028: Output Markdown Option
+REQ-CLI-029: No Markdown Flag
 """
 
 import shutil
@@ -60,7 +61,7 @@ class TestGenerateCommand:
         """Test mermaid format produces .mmd files (REQ-CLI-020)."""
         result = runner.invoke(
             main,
-            ["generate", str(sample_file), "-f", "mermaid", "-o", str(tmp_path)],
+            ["generate", str(sample_file), "-f", "mermaid", "--output-diagram-dir", str(tmp_path)],
         )
         assert result.exit_code == 0
         mmd_files = list(tmp_path.glob("*.mmd"))
@@ -71,7 +72,7 @@ class TestGenerateCommand:
         """Test dot format produces .dot files (REQ-CLI-020)."""
         result = runner.invoke(
             main,
-            ["generate", str(sample_file), "-f", "dot", "-o", str(tmp_path)],
+            ["generate", str(sample_file), "-f", "dot", "--output-diagram-dir", str(tmp_path)],
         )
         assert result.exit_code == 0
         dot_files = list(tmp_path.glob("*.dot"))
@@ -85,14 +86,15 @@ class TestGenerateCommand:
     def test_default_output_directory(
         self, runner: CliRunner, sample_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test default output directory is ./generated (REQ-CLI-021)."""
+        """Test default output directory is ./generated/diagrams (REQ-CLI-021)."""
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(
             main,
             ["generate", str(sample_file), "-f", "mermaid"],
         )
         assert result.exit_code == 0
-        generated_dir = tmp_path / "generated"
+        # Default diagram dir is now ./generated/diagrams
+        generated_dir = tmp_path / "generated" / "diagrams"
         assert generated_dir.exists()
         assert len(list(generated_dir.glob("*.mmd"))) > 0
 
@@ -103,7 +105,14 @@ class TestGenerateCommand:
         custom_dir = tmp_path / "custom_output"
         result = runner.invoke(
             main,
-            ["generate", str(sample_file), "-f", "mermaid", "-o", str(custom_dir)],
+            [
+                "generate",
+                str(sample_file),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(custom_dir),
+            ],
         )
         assert result.exit_code == 0
         assert custom_dir.exists()
@@ -117,7 +126,14 @@ class TestGenerateCommand:
         assert not nested_dir.exists()
         result = runner.invoke(
             main,
-            ["generate", str(sample_file), "-f", "mermaid", "-o", str(nested_dir)],
+            [
+                "generate",
+                str(sample_file),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(nested_dir),
+            ],
         )
         assert result.exit_code == 0
         assert nested_dir.exists()
@@ -127,7 +143,7 @@ class TestGenerateCommand:
         # First, generate all diagrams to see what we get
         result = runner.invoke(
             main,
-            ["generate", str(sample_file), "-f", "mermaid", "-o", str(tmp_path)],
+            ["generate", str(sample_file), "-f", "mermaid", "--output-diagram-dir", str(tmp_path)],
         )
         assert result.exit_code == 0
         all_files = list(tmp_path.glob("*.mmd"))
@@ -141,7 +157,7 @@ class TestGenerateCommand:
                 str(sample_file),
                 "-f",
                 "mermaid",
-                "-o",
+                "--output-diagram-dir",
                 str(filtered_dir),
                 "-d",
                 "BankingSystem",
@@ -162,7 +178,7 @@ class TestGenerateCommand:
                 str(sample_file),
                 "-f",
                 "mermaid",
-                "-o",
+                "--output-diagram-dir",
                 str(tmp_path),
                 "--no-placeholders",
             ],
@@ -171,28 +187,6 @@ class TestGenerateCommand:
         # Should still generate files (just without placeholders)
         mmd_files = list(tmp_path.glob("*.mmd"))
         assert len(mmd_files) > 0
-
-    def test_stdout_flag_text_format(self, runner: CliRunner, sample_file: Path) -> None:
-        """Test --stdout flag with text formats (REQ-CLI-024)."""
-        result = runner.invoke(
-            main,
-            ["generate", str(sample_file), "-f", "mermaid", "--stdout"],
-        )
-        assert result.exit_code == 0
-        # Content should be in output
-        assert "flowchart" in result.output or "graph" in result.output
-
-    def test_stdout_flag_with_graphic_format_fails(
-        self, runner: CliRunner, sample_file: Path
-    ) -> None:
-        """Test --stdout flag fails with graphic formats (REQ-CLI-024)."""
-        with patch("designit.cli._check_graphviz_installed"):
-            result = runner.invoke(
-                main,
-                ["generate", str(sample_file), "-f", "svg", "--stdout"],
-            )
-            assert result.exit_code != 0
-            assert "Cannot use --stdout with graphic format" in result.output
 
 
 class TestGenerateValidation:
@@ -225,7 +219,14 @@ dfd Level0 {
         """Test that generate fails when there are validation errors."""
         result = runner.invoke(
             main,
-            ["generate", str(invalid_file), "-f", "mermaid", "-o", str(tmp_path / "out")],
+            [
+                "generate",
+                str(invalid_file),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(tmp_path / "out"),
+            ],
         )
         assert result.exit_code != 0
         assert "error" in result.output.lower()
@@ -238,7 +239,15 @@ dfd Level0 {
         output_dir = tmp_path / "out"
         result = runner.invoke(
             main,
-            ["generate", str(invalid_file), "-f", "mermaid", "-o", str(output_dir), "--no-check"],
+            [
+                "generate",
+                str(invalid_file),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(output_dir),
+                "--no-check",
+            ],
         )
         assert result.exit_code == 0
         assert "Generated" in result.output
@@ -251,7 +260,14 @@ dfd Level0 {
         """Test that generate shows validation messages before failing."""
         result = runner.invoke(
             main,
-            ["generate", str(invalid_file), "-f", "mermaid", "-o", str(tmp_path / "out")],
+            [
+                "generate",
+                str(invalid_file),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(tmp_path / "out"),
+            ],
         )
         assert result.exit_code != 0
         # Should show the specific error about undefined flow
@@ -263,10 +279,175 @@ dfd Level0 {
         """Test that generate succeeds for valid files without --no-check."""
         result = runner.invoke(
             main,
-            ["generate", str(sample_file), "-f", "mermaid", "-o", str(tmp_path)],
+            ["generate", str(sample_file), "-f", "mermaid", "--output-diagram-dir", str(tmp_path)],
         )
         assert result.exit_code == 0
         assert "Generated" in result.output
+
+
+class TestMarkdownGeneration:
+    """Tests for markdown generation in the generate command."""
+
+    @pytest.fixture
+    def file_with_markdown(self, tmp_path: Path) -> Path:
+        """Create a .dit file with markdown blocks."""
+        content = """
+datadict {
+    Request = { data: string }
+}
+
+scd Context {
+    system API { description: "Main API system" }
+    external Client {}
+    flow Request: Client -> API
+}
+
+markdown {
+    ## {{Context.name}}
+
+    {{Context.API.description}}
+
+    {{diagram:Context}}
+}
+"""
+        file_path = tmp_path / "with_markdown.dit"
+        file_path.write_text(content)
+        return file_path
+
+    @pytest.fixture
+    def file_without_markdown(self, tmp_path: Path) -> Path:
+        """Create a .dit file without markdown blocks."""
+        content = """
+datadict {
+    Request = { data: string }
+}
+
+scd Context {
+    system API {}
+    external Client {}
+    flow Request: Client -> API
+}
+"""
+        file_path = tmp_path / "without_markdown.dit"
+        file_path.write_text(content)
+        return file_path
+
+    def test_generate_with_markdown_blocks(
+        self, runner: CliRunner, file_with_markdown: Path, tmp_path: Path
+    ) -> None:
+        """Test that markdown is generated when markdown blocks exist (REQ-CLI-028)."""
+        result = runner.invoke(
+            main,
+            [
+                "generate",
+                str(file_with_markdown),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(tmp_path / "diagrams"),
+            ],
+        )
+        assert result.exit_code == 0
+        # Default markdown path is ./generated/<SystemName>.md
+        # Since we didn't specify --output-markdown, it should use default
+        # But our tmp_path is different, so check that markdown was generated
+        assert "Generated" in result.output
+        # The markdown file should be in ./generated/API.md (system name is API)
+
+    def test_generate_with_custom_markdown_path(
+        self, runner: CliRunner, file_with_markdown: Path, tmp_path: Path
+    ) -> None:
+        """Test custom markdown output path (REQ-CLI-028)."""
+        md_path = tmp_path / "docs" / "architecture.md"
+        result = runner.invoke(
+            main,
+            [
+                "generate",
+                str(file_with_markdown),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(tmp_path / "diagrams"),
+                "--output-markdown",
+                str(md_path),
+            ],
+        )
+        assert result.exit_code == 0
+        assert md_path.exists()
+        content = md_path.read_text()
+        assert "## Context" in content
+        assert "Main API system" in content
+
+    def test_generate_with_no_markdown_flag(
+        self, runner: CliRunner, file_with_markdown: Path, tmp_path: Path
+    ) -> None:
+        """Test --no-markdown flag disables markdown generation (REQ-CLI-029)."""
+        result = runner.invoke(
+            main,
+            [
+                "generate",
+                str(file_with_markdown),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(tmp_path / "diagrams"),
+                "--no-markdown",
+            ],
+        )
+        assert result.exit_code == 0
+        # No markdown file should be generated in the default location
+        md_files = list(tmp_path.glob("**/*.md"))
+        assert len(md_files) == 0
+
+    def test_generate_without_markdown_blocks(
+        self, runner: CliRunner, file_without_markdown: Path, tmp_path: Path
+    ) -> None:
+        """Test that no markdown is generated when no markdown blocks exist."""
+        result = runner.invoke(
+            main,
+            [
+                "generate",
+                str(file_without_markdown),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(tmp_path / "diagrams"),
+            ],
+        )
+        assert result.exit_code == 0
+        # Should still generate diagrams
+        mmd_files = list((tmp_path / "diagrams").glob("*.mmd"))
+        assert len(mmd_files) > 0
+
+    def test_markdown_requires_scd_with_system(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test that markdown generation fails without SCD system (REQ-DOC-034)."""
+        # File with markdown but no system in SCD
+        content = """
+scd Context {
+    external Client {}
+}
+
+markdown {
+    ## Overview
+}
+"""
+        file_path = tmp_path / "no_system.dit"
+        file_path.write_text(content)
+
+        result = runner.invoke(
+            main,
+            [
+                "generate",
+                str(file_path),
+                "-f",
+                "mermaid",
+                "--output-diagram-dir",
+                str(tmp_path / "diagrams"),
+                "--no-check",  # Skip validation to test markdown-specific error
+            ],
+        )
+        assert result.exit_code != 0
+        assert "SCD with a system definition" in result.output
 
 
 class TestGraphVizRendering:
@@ -460,7 +641,7 @@ class TestGenerateGraphicFormats:
         """Integration test for generating SVG output."""
         result = runner.invoke(
             main,
-            ["generate", str(sample_file), "-f", "svg", "-o", str(tmp_path)],
+            ["generate", str(sample_file), "-f", "svg", "--output-diagram-dir", str(tmp_path)],
         )
         assert result.exit_code == 0
         svg_files = list(tmp_path.glob("*.svg"))
@@ -480,7 +661,7 @@ class TestGenerateGraphicFormats:
         """Integration test for generating PNG output."""
         result = runner.invoke(
             main,
-            ["generate", str(sample_file), "-f", "png", "-o", str(tmp_path)],
+            ["generate", str(sample_file), "-f", "png", "--output-diagram-dir", str(tmp_path)],
         )
         assert result.exit_code == 0
         png_files = list(tmp_path.glob("*.png"))

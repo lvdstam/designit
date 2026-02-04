@@ -845,20 +845,21 @@ datadict {
 Type references in union types shall be validated against existing types.
 
 **Acceptance Criteria:**
-- WARNING if a type union references an undefined type
+- ERROR if a type union references an undefined type
 - Built-in types (string, integer, etc.) in unions are always valid
 - Enum literals (quoted strings) are not validated as type references
+- All union alternatives must be resolvable for flow type decomposition (REQ-SEM-090) to work
 
 **Example:**
 ```
 datadict {
-    // WARNING: 'UndefinedType' is not defined
+    // ERROR: 'UndefinedType' is not defined
     Result = Success | UndefinedType
     
-    // No warning: built-in types are valid
+    // No error: built-in types are valid
     Value = string | integer
     
-    // No warning: enum literals are not type references
+    // No error: enum literals are not type references
     Status = "active" | "inactive"
 }
 ```
@@ -1014,6 +1015,152 @@ Datadict type names must not conflict with diagram element names.
 - Severity: ERROR
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_datadict_name_conflicts()`
+
+---
+
+#### REQ-SEM-090: Flow Type Decomposition in Refinements
+When a parent flow has a union type, the child DFD may decompose that flow into separate flows for each union alternative (subtype) instead of using the parent type directly.
+
+**Acceptance Criteria:**
+- Child DFD may use parent flow type directly (existing behavior)
+- Child DFD may use all subtypes of a union type instead of the parent type
+- If decomposition is used, ALL subtypes must be covered (for inbound flows)
+- Subtypes follow the same coverage rules as parent types:
+  - Inbound subtypes: exactly one process must handle each (per REQ-SEM-082)
+  - Outbound subtypes: zero or more processes may handle each (per REQ-SEM-083)
+- Decomposition applies equally to inbound, outbound, and bidirectional flows
+
+**Example:**
+```
+datadict {
+    CreditCard = { number: string }
+    BankTransfer = { iban: string }
+    Cash = { amount: decimal }
+    PaymentMethod = CreditCard | BankTransfer | Cash
+}
+
+scd Context {
+    system PaymentSystem {}
+    external Customer {}
+    flow PaymentMethod: Customer -> PaymentSystem
+}
+
+// Valid: using parent type directly
+dfd DirectUse {
+    refines: Context.PaymentSystem
+    process HandlePayment {}
+    flow PaymentMethod: -> HandlePayment
+}
+
+// Valid: decomposed into all subtypes
+dfd Decomposed {
+    refines: Context.PaymentSystem
+    process ProcessCards {}
+    process ProcessBank {}
+    process ProcessCash {}
+    flow CreditCard: -> ProcessCards
+    flow BankTransfer: -> ProcessBank
+    flow Cash: -> ProcessCash
+}
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-091: Flow Type Decomposition Mixing Prohibition
+A child DFD shall not mix a parent flow type with its subtypes in the same refinement.
+
+**Acceptance Criteria:**
+- ERROR if child uses both parent type AND any of its subtypes
+- Error message: `Flow type 'X' cannot be mixed with its subtype 'Y' in refinement of 'Parent.Element'`
+- This applies at each level of union nesting
+
+**Example:**
+```
+datadict {
+    CreditCard = { number: string }
+    BankTransfer = { iban: string }
+    PaymentMethod = CreditCard | BankTransfer
+}
+
+scd Context {
+    system PaymentSystem {}
+    external Customer {}
+    flow PaymentMethod: Customer -> PaymentSystem
+}
+
+// ERROR: mixes parent type with subtype
+dfd InvalidMixed {
+    refines: Context.PaymentSystem
+    process HandleAll {}
+    process HandleCards {}
+    flow PaymentMethod: -> HandleAll    // Uses parent type
+    flow CreditCard: -> HandleCards     // AND uses subtype - ERROR
+}
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-092: Nested Union Type Decomposition
+When decomposing a union type, the child DFD may stop at any level of the union hierarchy, but must not mix levels within the same parent type.
+
+**Acceptance Criteria:**
+- Decomposition may stop at intermediate union types (not required to go to leaf types)
+- All alternatives at the chosen level must be covered (for inbound flows)
+- Mixing levels within the same parent flow is an error (per REQ-SEM-091)
+
+**Example:**
+```
+datadict {
+    CreditCard = { number: string }
+    DebitCard = { number: string }
+    CardPayment = CreditCard | DebitCard
+    BankTransfer = { iban: string }
+    PaymentMethod = CardPayment | BankTransfer
+}
+
+scd Context {
+    system PaymentSystem {}
+    external Customer {}
+    flow PaymentMethod: Customer -> PaymentSystem
+}
+
+// Valid: decompose to first level (CardPayment, BankTransfer)
+dfd Level1 {
+    refines: Context.PaymentSystem
+    process ProcessCards {}
+    process ProcessBank {}
+    flow CardPayment: -> ProcessCards
+    flow BankTransfer: -> ProcessBank
+}
+
+// Valid: decompose to leaf level (CreditCard, DebitCard, BankTransfer)
+dfd LeafLevel {
+    refines: Context.PaymentSystem
+    process ProcessCredit {}
+    process ProcessDebit {}
+    process ProcessBank {}
+    flow CreditCard: -> ProcessCredit
+    flow DebitCard: -> ProcessDebit
+    flow BankTransfer: -> ProcessBank
+}
+
+// ERROR: mixes levels (CardPayment with CreditCard)
+dfd MixedLevels {
+    refines: Context.PaymentSystem
+    process ProcessCards {}
+    process ProcessCredit {}
+    process ProcessBank {}
+    flow CardPayment: -> ProcessCards   // Level 1
+    flow CreditCard: -> ProcessCredit   // Level 2 - ERROR: mixes with CardPayment
+    flow BankTransfer: -> ProcessBank
+}
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
 
 ---
 
@@ -1314,10 +1461,12 @@ GraphViz DFD boundary nodes shall be invisible.
 
 ---
 
-#### REQ-GEN-013: Bidirectional Boundary Flow Rendering [DONE]
+#### REQ-GEN-013: Bidirectional Boundary Flow Rendering [SUPERSEDED by REQ-GEN-070]
 When the same process handles both inbound and outbound boundary flows for the same flow name, generators shall render a single bidirectional edge.
 
-**Acceptance Criteria:**
+*This requirement has been superseded by REQ-GEN-070, which provides comprehensive flow aggregation including direction aggregation.*
+
+**Original Acceptance Criteria:**
 - Detect when same process is target of inbound AND source of outbound for same flow name
 - Render single boundary node (not two)
 - Mermaid: Render as `_boundary_FlowName <-->|"FlowName"| Process`
@@ -1325,9 +1474,191 @@ When the same process handles both inbound and outbound boundary flows for the s
 - Label shows flow name once
 - When different processes handle in/out, render as two separate edges
 
-**Implementation:**
-- `src/designit/generators/mermaid.py:MermaidGenerator._write_dfd()`
-- `src/designit/generators/graphviz.py:GraphVizGenerator._write_dfd()`
+**Implementation:** `src/designit/semantic/aggregator.py:aggregate_flows()`
+
+---
+
+#### REQ-GEN-070: Flow Aggregation [DONE]
+When generating diagrams, flows shall be aggregated based on union type coverage and direction.
+
+**Type Aggregation** occurs when:
+1. The flows cover **all subtypes** of a union type defined in the data dictionary
+2. The flows have the **same direction**
+3. The flows have the **same endpoints**:
+   - **SCD flows**: Same source and target elements
+   - **DFD boundary flows**: Same process endpoint
+   - **DFD internal flows**: Same source AND same target elements
+
+**Direction Aggregation** occurs when:
+1. After type aggregation, two flows exist between the same endpoints with opposite directions
+2. The flows have the same label (type name)
+
+**Aggregation Order:**
+1. First: Type aggregation (subtypes → parent type, grouped by direction and endpoints)
+2. Second: Direction aggregation (opposite directions → bidirectional)
+
+**Acceptance Criteria:**
+- Flows covering all subtypes of a union render as single arrow with parent type label
+- Opposite-direction flows with same label and endpoints render as bidirectional arrow
+- Enum unions (quoted string literals) are NOT type-aggregated
+- Aggregation is enabled by default
+- Applies to both Mermaid and GraphViz generators
+- Applies to both SCD and DFD diagrams
+
+**Examples:**
+
+*SCD type aggregation:*
+```
+datadict { PaymentMethod = CreditCard | BankTransfer }
+scd Context {
+    system Sys {}
+    external Customer {}
+    flow CreditCard: Customer -> Sys
+    flow BankTransfer: Customer -> Sys
+}
+```
+Renders as: `PaymentMethod: Customer -> Sys`
+
+*DFD boundary type aggregation:*
+```
+dfd Payments {
+    process Handler {}
+    flow CreditCard: -> Handler
+    flow BankTransfer: -> Handler
+}
+```
+Renders as: `PaymentMethod: -> Handler`
+
+*DFD internal type + direction aggregation:*
+```
+dfd Payments {
+    process Validate {}
+    process Process {}
+    flow CreditCard: Validate -> Process
+    flow BankTransfer: Validate -> Process
+    flow CreditCard: Process -> Validate
+    flow BankTransfer: Process -> Validate
+}
+```
+Renders as: `PaymentMethod: Validate <-> Process`
+
+**Implementation:** `src/designit/semantic/aggregator.py:aggregate_flows()`
+
+---
+
+#### REQ-GEN-071: Highest-Level Type Aggregation [DONE]
+Type aggregation shall aggregate to the highest union level where complete coverage exists.
+
+**Acceptance Criteria:**
+- For nested unions, aggregation proceeds from leaf types upward
+- Aggregation stops at the highest level where all subtypes are covered
+- Partial coverage at a level prevents aggregation at that level
+
+**Example:**
+```
+datadict {
+    CreditCard = { number: string }
+    DebitCard = { number: string }
+    BankTransfer = { iban: string }
+    CardPayment = CreditCard | DebitCard
+    PaymentMethod = CardPayment | BankTransfer
+}
+scd Context {
+    system Sys {}
+    external Customer {}
+    flow CreditCard: Customer -> Sys
+    flow DebitCard: Customer -> Sys
+    flow BankTransfer: Customer -> Sys
+}
+```
+Aggregation steps:
+1. `CreditCard + DebitCard → CardPayment`
+2. `CardPayment + BankTransfer → PaymentMethod`
+
+Renders as: `PaymentMethod: Customer -> Sys`
+
+**Implementation:** `src/designit/semantic/aggregator.py:aggregate_flows()`
+
+---
+
+#### REQ-GEN-072: Partial Coverage No Aggregation [DONE]
+When not all subtypes of a union are covered by flows, no aggregation shall occur at that level.
+
+**Acceptance Criteria:**
+- Missing subtypes prevent aggregation to parent type
+- Each flow renders individually with its own label
+- Partial coverage at nested levels still allows aggregation at lower complete levels
+
+**Example (no aggregation - missing BankTransfer):**
+```
+datadict { PaymentMethod = CreditCard | BankTransfer }
+scd Context {
+    system Sys {}
+    external Customer {}
+    flow CreditCard: Customer -> Sys
+}
+```
+Renders as: `CreditCard: Customer -> Sys` (no aggregation)
+
+**Example (partial nested aggregation):**
+```
+datadict {
+    CardPayment = CreditCard | DebitCard
+    PaymentMethod = CardPayment | BankTransfer
+}
+scd Context {
+    system Sys {}
+    external Customer {}
+    flow CreditCard: Customer -> Sys
+    flow DebitCard: Customer -> Sys
+    // BankTransfer missing
+}
+```
+Renders as: `CardPayment: Customer -> Sys` (aggregates cards, but not to PaymentMethod)
+
+**Implementation:** `src/designit/semantic/aggregator.py:aggregate_flows()`
+
+---
+
+#### REQ-GEN-073: Cross-Direction Type Aggregation [DONE]
+When subtypes of a union flow in opposite directions between the same elements, they shall aggregate into a bidirectional flow with the parent type name.
+
+**Acceptance Criteria:**
+- Flows with different names but same union parent aggregate across directions
+- Inbound and outbound subtypes merge into bidirectional parent
+- Works with namespaced types (e.g., `PICiX.SubType` -> `PICiX.ParentType`)
+- Nested unions aggregate to the highest covering level
+- Partial coverage (missing subtypes) prevents aggregation
+- Applies to both SCD flows and DFD boundary/internal flows
+
+**Example (SCD cross-direction aggregation):**
+```
+datadict PICiX {
+    IPICiX = PICiX_to_System | System_to_PICiX
+    PICiX_to_System = { data: string }
+    System_to_PICiX = { result: string }
+}
+scd Context {
+    system Sys {}
+    external PICiX {}
+    flow PICiX.PICiX_to_System: PICiX -> Sys
+    flow PICiX.System_to_PICiX: Sys -> PICiX
+}
+```
+Renders as: `PICiX.IPICiX: PICiX <-> Sys` (bidirectional with parent type)
+
+**Example (DFD boundary cross-direction):**
+```
+dfd Level0 {
+    refines: Context.Sys
+    process Handler {}
+    flow PICiX.PICiX_to_System: -> Handler
+    flow PICiX.System_to_PICiX: Handler ->
+}
+```
+Renders as: `PICiX.IPICiX: <-> Handler` (bidirectional boundary flow)
+
+**Implementation:** `src/designit/semantic/aggregator.py:_aggregate_scd_cross_direction_types()`, `_aggregate_dfd_boundary_cross_direction()`, `_aggregate_dfd_internal_cross_direction()`
 
 ---
 
@@ -1467,13 +1798,13 @@ Generate command shall support output format selection.
 
 ---
 
-#### REQ-CLI-021: Output Directory Option [DONE]
-Generate command shall support specifying output directory.
+#### REQ-CLI-021: Output Diagram Directory Option [DONE]
+Generate command shall support specifying diagram output directory.
 
 **Acceptance Criteria:**
-- Option: `-o/--output DIR`
+- Option: `--output-diagram-dir DIR`
 - Creates directory if it doesn't exist
-- Default: `./generated`
+- Default: `./generated/diagrams`
 
 **Implementation:** `src/designit/cli.py:generate()`
 
@@ -1503,17 +1834,8 @@ Generate command shall support excluding placeholder elements.
 
 ---
 
-#### REQ-CLI-024: Stdout Flag [DONE]
-Generate command shall support printing output to stdout.
-
-**Acceptance Criteria:**
-- Flag: `--stdout`
-- When set, diagram content printed to stdout
-- No files created
-- Only valid for text formats (`mermaid`, `dot`)
-- Error if used with graphic formats
-
-**Implementation:** `src/designit/cli.py:generate()`
+#### REQ-CLI-024: Stdout Flag [REMOVED]
+*This requirement has been removed. The --stdout flag is no longer supported.*
 
 ---
 
@@ -1527,6 +1849,46 @@ Generate command shall validate by default and support skipping validation.
 - When set, validation is skipped and diagrams are generated even with errors
 - Validation messages (errors, warnings, info) are printed before failing
 - Hint about `--no-check` is shown when generation fails due to validation
+
+**Implementation:** `src/designit/cli.py:generate()`
+
+---
+
+#### REQ-CLI-027: No Aggregate Flows Flag [DONE]
+Generate command shall support disabling flow aggregation.
+
+**Acceptance Criteria:**
+- Flag: `--no-aggregate-flows`
+- When set, all flows render individually without aggregation
+- Type aggregation and direction aggregation both disabled
+- Useful for debugging or when explicit flow visibility is needed
+
+**Implementation:** `src/designit/cli.py:generate()`, `src/designit/semantic/aggregator.py`
+
+---
+
+#### REQ-CLI-028: Output Markdown Option [DONE]
+Generate command shall support specifying markdown output file path.
+
+**Acceptance Criteria:**
+- Option: `--output-markdown/-m PATH`
+- PATH is the full file path (directory + filename)
+- Default: `./generated/<SystemName>.md` where `<SystemName>` comes from the SCD's system name
+- Creates parent directory if it doesn't exist
+- Only used when markdown blocks exist in the .dit file
+
+**Implementation:** `src/designit/cli.py:generate()`
+
+---
+
+#### REQ-CLI-029: No Markdown Flag [DONE]
+Generate command shall support disabling markdown generation.
+
+**Acceptance Criteria:**
+- Flag: `--no-markdown`
+- When set, markdown document is not generated even if markdown blocks exist
+- Diagrams are still generated normally
+- Useful when only diagrams are needed
 
 **Implementation:** `src/designit/cli.py:generate()`
 
@@ -2151,81 +2513,87 @@ The document generation process shall follow a defined pipeline.
 
 ### 7.4 CLI Integration
 
-#### REQ-DOC-030: Doc Command [DONE]
-The CLI shall provide a `doc` command to generate markdown documentation.
+*Note: The `doc` command has been consolidated into the `generate` command. Markdown documentation is now automatically generated when markdown blocks are present in the .dit file.*
+
+#### REQ-DOC-030: Integrated Documentation Generation [DONE]
+The `generate` command shall automatically generate markdown documentation when markdown blocks are present.
 
 **Acceptance Criteria:**
-- Command: `designit doc FILE`
-- Parses file with imports
-- Validates model and templates
-- Generates combined markdown output
+- Markdown is generated automatically when `.dit` file contains `markdown { }` blocks
+- Uses the same `--format/-f` option as diagram generation
+- Validates model and templates before generation
+- Generates combined markdown output with embedded diagrams
 - Reports errors if validation fails
+- Use `--no-markdown` to disable automatic markdown generation
 
 **Example:**
 ```bash
-designit doc design.dit
+# Generate diagrams and markdown (when markdown blocks exist)
+designit generate design.dit
+
+# Generate only diagrams (skip markdown)
+designit generate design.dit --no-markdown
 ```
 
-**Implementation:** `src/designit/cli.py:doc_cmd()`
+**Implementation:** `src/designit/cli.py:generate()`
 
 ---
 
-#### REQ-DOC-031: Doc Output Options [DONE]
-The doc command shall support specifying output directory and filename.
+#### REQ-DOC-031: Markdown Output Path Option [DONE]
+The generate command shall support specifying markdown output file path.
 
 **Acceptance Criteria:**
-- Option: `-o/--output DIR` - output directory (default: `./generated`)
-- Option: `--name FILENAME` - override output filename
-- Default filename: `<scd.system.name>.md` (derived from the SCD's system name)
+- Option: `--output-markdown/-m PATH` - full file path (directory + filename)
+- Default: `./generated/<scd.system.name>.md` (derived from the SCD's system name)
 - Creates directory if needed
 
 **Example:**
 ```bash
-designit doc design.dit -o docs --name architecture.md
+designit generate design.dit -m docs/architecture.md
 ```
 
-**Implementation:** `src/designit/cli.py:doc_cmd()`
+**Implementation:** `src/designit/cli.py:generate()`
 
 ---
 
-#### REQ-DOC-032: Doc Diagram Format Option [DONE]
-The doc command shall support specifying the diagram format.
+#### REQ-DOC-032: Diagram Format for Documentation [DONE]
+The generate command uses the same format option for both diagrams and documentation.
 
 **Acceptance Criteria:**
-- Option: `-f/--format FORMAT` (reuses existing generate command option)
-- Supported formats: `svg` (default), `png`, `mmd` (Mermaid code block)
+- Option: `-f/--format FORMAT` (same as diagram format)
+- Supported formats for documentation: `svg` (default), `png`, `mermaid`
 - For `svg`/`png`: embeds as image reference
-- For `mmd`: embeds as fenced code block with `mermaid` language tag
+- For `mermaid`: writes `.mmd` files and references them
 
 **Example:**
 ```bash
-# For GitHub markdown (uses mermaid code blocks)
-designit doc design.dit --format mmd
+# SVG diagrams (default)
+designit generate design.dit
 
-# For PDF generation (uses SVG images)
-designit doc design.dit --format svg
+# Mermaid format
+designit generate design.dit -f mermaid
 ```
 
-**Implementation:** `src/designit/cli.py:doc_cmd()`
+**Implementation:** `src/designit/cli.py:generate()`
 
 ---
 
-#### REQ-DOC-033: Doc Diagram Directory Option [DONE]
-The doc command shall support specifying where diagram files are stored.
+#### REQ-DOC-033: Diagram Directory for Documentation [DONE]
+The generate command uses the same diagram directory for documentation.
 
 **Acceptance Criteria:**
-- Option: `--output-diagrams DIR`
+- Option: `--output-diagram-dir DIR`
 - Default: `./generated/diagrams`
 - Diagram files written to this directory for all formats (svg, png, mmd)
-- Markdown uses relative paths from output file to diagram directory
+- Markdown uses relative paths from markdown file to diagram directory
 - Creates directory if needed
 
 **Example:**
 ```bash
-designit doc design.dit -o docs --output-diagrams docs/images
+designit generate design.dit --output-diagram-dir docs/images -m docs/design.md
 ```
 
-**Implementation:** `src/designit/cli.py:doc_cmd()`
+**Implementation:** `src/designit/cli.py:generate()`
 
 ---
 
@@ -2233,11 +2601,12 @@ designit doc design.dit -o docs --output-diagrams docs/images
 Document generation shall require exactly one SCD with a system definition.
 
 **Acceptance Criteria:**
-- ERROR if no SCD exists in the model
-- ERROR if SCD has no system defined
-- Error message: `"Document generation requires an SCD with a system definition"`
+- ERROR if markdown blocks exist but no SCD exists in the model
+- ERROR if markdown blocks exist but SCD has no system defined
+- Error message: `"Markdown generation requires an SCD with a system definition"`
+- Without markdown blocks, diagrams can be generated without this requirement
 
-**Implementation:** `src/designit/cli.py:doc_cmd()`
+**Implementation:** `src/designit/cli.py:generate()`
 
 ---
 
