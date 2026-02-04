@@ -11,7 +11,7 @@ from designit.model.base import (
 )
 
 if TYPE_CHECKING:
-    from designit.model.datadict import DataDefinition, TypeRef
+    from designit.model.datadict import DataDefinition, TypeRef, UnionType
     from designit.model.dfd import DFDModel
     from designit.model.scd import SCDModel
 
@@ -552,7 +552,8 @@ class Validator:
         """Validate the data dictionary.
 
         This validates:
-        - Type references exist
+        - REQ-SEM-068: Union type consistency (no mixing enum literals with type refs)
+        - REQ-SEM-069: Union type reference validation
         - REQ-SEM-064: Cross-namespace reference restriction
         - REQ-SEM-066: Namespace shadowing warning
         """
@@ -578,10 +579,43 @@ class Validator:
             if defn.is_placeholder:
                 continue
 
+            # REQ-SEM-068: Check union type consistency
+            self._validate_union_consistency(def_name, defn)
+
             # Check type references with namespace-first resolution
             referenced = dd.get_all_referenced_types(def_name)
             for type_ref in referenced:
                 self._validate_type_reference(dd, def_name, defn, type_ref, builtin_types)
+
+    def _validate_union_consistency(self, def_name: str, defn: DataDefinition) -> None:
+        """REQ-SEM-068: Validate that union types don't mix enum literals with type refs."""
+        from designit.model.datadict import UnionType
+
+        if not defn.is_union or not isinstance(defn.definition, UnionType):
+            return
+
+        union_def: UnionType = defn.definition
+        has_enum_literals = False
+        has_type_refs = False
+
+        for alt in union_def.alternatives:
+            if isinstance(alt, str):
+                if alt.startswith('"') or alt.startswith("'"):
+                    has_enum_literals = True
+                else:
+                    # Unquoted string = type reference (identifier or base type)
+                    has_type_refs = True
+            else:
+                # TypeRef object = qualified type reference
+                has_type_refs = True
+
+        if has_enum_literals and has_type_refs:
+            self._error(
+                f"Union type '{def_name}' mixes enum literals with type references",
+                def_name,
+                defn.source_file,
+                defn.line,
+            )
 
     def _validate_type_reference(
         self,

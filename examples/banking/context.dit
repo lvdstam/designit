@@ -5,94 +5,94 @@
 datadict {
     // Customer authentication flows
     LoginRequest = {
-        username: string
-        password: string
+        username: string,
+        password: string,
         device_info: string [optional]
     }
 
     // Account information response
     AccountInfo = {
-        account_number: string
-        balance: decimal
-        account_type: string
+        account_number: string,
+        balance: decimal,
+        account_type: string,
         last_transaction_date: datetime [optional]
     }
 
     // Transaction request (bidirectional with confirmation)
     TransactionRequest = {
-        account_number: string
-        type: string
-        amount: decimal
+        account_number: string,
+        type: string,
+        amount: decimal,
         description: string [optional]
     }
 
     TransactionConfirmation = {
-        transaction_id: string
-        status: string
-        timestamp: datetime
+        transaction_id: string,
+        status: string,
+        timestamp: datetime,
         message: string [optional]
     }
 
     // Teller operations
     TellerQuery = {
-        query_type: string
-        customer_id: string [optional]
+        query_type: string,
+        customer_id: string [optional],
         account_number: string [optional]
     }
 
     CustomerData = {
-        customer_id: string
-        name: string
-        accounts: string
+        customer_id: string,
+        name: string,
+        accounts: string,
         contact_info: string
     }
 
     // External bank transfers
     TransferData = {
-        from_account: string
-        to_account: string
-        to_bank_code: string
-        amount: decimal
+        from_account: string,
+        to_account: string,
+        to_bank_code: string,
+        amount: decimal,
         currency: string
     }
 
     // Regulatory compliance
     ComplianceReport = {
-        report_type: string
-        period_start: date
-        period_end: date
+        report_type: string,
+        period_start: date,
+        period_end: date,
         data: string
     }
 
     AuditRequest = {
-        request_id: string
-        audit_type: string
+        request_id: string,
+        audit_type: string,
         date_range: string
     }
 
     // Database operations
     CustomerLookup = {
-        customer_id: string [optional]
+        customer_id: string [optional],
         account_number: string [optional]
     }
 
     CustomerUpdate = {
-        customer_id: string
-        field: string
+        customer_id: string,
+        field: string,
         value: string
     }
 
     TransactionRecord = {
-        transaction_id: string
-        account_id: string
-        type: string
-        amount: decimal
+        transaction_id: string,
+        account_id: string,
+        type: string,
+        amount: decimal,
         timestamp: datetime
     }
 
     AuditQuery = {
-        query_type: string
-        date_range: string
+        query_type: string,
+        date_range: string,
         filters: string [optional]
     }
 }

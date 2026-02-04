@@ -222,11 +222,23 @@ class DataDictionaryModel(BaseModel):
         return result
 
     def _get_type_refs(self, definition: TypeDefinition) -> list[TypeRef]:
-        """Get direct type references from a type definition."""
+        """Get direct type references from a type definition.
+
+        For union types, only unquoted strings (type references) are returned.
+        Quoted strings (enum literals) are not type references and are skipped.
+        """
         if isinstance(definition, StructType):
             return [field.type_ref for field in definition.fields.values()]
         elif isinstance(definition, UnionType):
-            return [alt for alt in definition.alternatives if isinstance(alt, TypeRef)]
+            refs: list[TypeRef] = []
+            for alt in definition.alternatives:
+                if isinstance(alt, TypeRef):
+                    refs.append(alt)
+                elif isinstance(alt, str):
+                    # Quoted strings are enum literals, not type references
+                    if not (alt.startswith('"') or alt.startswith("'")):
+                        refs.append(TypeRef(namespace=None, name=alt))
+            return refs
         elif isinstance(definition, ArrayType):
             return [definition.element_type]
         elif isinstance(definition, TypeReference):

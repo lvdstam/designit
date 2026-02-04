@@ -947,9 +947,23 @@ class DesignItTransformer(Transformer[Token, Any]):
                 field_constraints.append(c)
         return StructFieldNode(name=name, type_ref=type_ref, constraints=field_constraints)
 
+    def empty_struct_def(self, items: list[Any]) -> StructDefNode:
+        """Handle empty struct: { }"""
+        return StructDefNode(fields=[])
+
     def struct_def(self, items: list[Any]) -> StructDefNode:
         fields = [item for item in items if isinstance(item, StructFieldNode)]
         return StructDefNode(fields=fields)
+
+    def union_string_literal(self, items: list[Any]) -> str:
+        """Handle string literal in union - preserve quotes to distinguish from type refs."""
+        # The STRING token includes quotes, we want to preserve them
+        # items[0] is the raw token value with quotes
+        token = items[0] if items else '""'
+        # Ensure quotes are preserved (token should already have them)
+        if isinstance(token, str) and not (token.startswith('"') or token.startswith("'")):
+            return f'"{token}"'
+        return token
 
     def union_first(self, items: list[Any]) -> str | DataDictTypeRefNode:
         """Handle first alternative in union: can be string literal, base type, or type ref."""

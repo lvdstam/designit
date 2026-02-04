@@ -157,14 +157,24 @@ simple_type_ref: base_type
 
 // Union must start with a string OR an identifier/type, followed by | alternatives
 // Type references can be simple (TypeName) or qualified (Namespace.TypeName)
+// String literals (quoted) become enum values, identifiers (unquoted) become type references
 union_def: union_first ("|" union_alt)+
 
-union_first: STRING | base_type | qualified_type_ref | IDENTIFIER
-union_alt: STRING | base_type | qualified_type_ref | IDENTIFIER
+union_first: STRING -> union_string_literal
+           | base_type
+           | qualified_type_ref
+           | IDENTIFIER
+union_alt: STRING -> union_string_literal
+         | base_type
+         | qualified_type_ref
+         | IDENTIFIER
 
-struct_def: "{" _NL* struct_field* "}"
+// Struct fields are separated by commas. Trailing comma is NOT allowed.
+// Empty structs are valid: Foo = { }
+struct_def: "{" _NL* "}"                                            -> empty_struct_def
+          | "{" _NL* struct_field ("," _NL* struct_field)* _NL* "}"
 
-struct_field: identifier ":" type_expr field_constraints? _NL*
+struct_field: identifier ":" type_expr field_constraints?
 
 field_constraints: "[" field_constraint ("," field_constraint)* "]"
 

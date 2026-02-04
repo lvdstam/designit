@@ -197,8 +197,8 @@ class TestDataDictParsing:
             UserName = string
             Status = "active" | "inactive"
             UserData = {
-                name: string
-                email: string [optional]
+                name: string,
+                email: string [optional],
                 age: integer [min: 0, max: 150]
             }
             UserList = UserData[] [min: 0, max: 100]
@@ -1026,7 +1026,7 @@ class TestNamedDataDictParsing:
         source = """
         datadict {
             Money = {
-                amount: decimal
+                amount: decimal,
                 currency: string
             }
             Status = "pending" | "complete"
@@ -1046,7 +1046,7 @@ class TestNamedDataDictParsing:
                 transaction_id: string
             }
             GetStatusResponse = {
-                status: string
+                status: string,
                 amount: decimal
             }
         }
@@ -1280,7 +1280,7 @@ class TestQualifiedTypeRefParsing:
 
         datadict ServiceB {
             Request = {
-                serviceA_response: ServiceA.Response
+                serviceA_response: ServiceA.Response,
                 simple_field: string
             }
         }
@@ -1317,7 +1317,7 @@ class TestQualifiedTypeRefParsing:
         datadict {
             Address = { street: string }
             Person = {
-                name: string
+                name: string,
                 home: Address
             }
         }
@@ -1369,9 +1369,71 @@ class TestQualifiedTypeRefParsing:
         assert alt2.namespace == "ServiceB"
         assert alt2.name == "TypeB"
 
-        # Third alternative: string literal
+        # Third alternative: string literal (quotes should be preserved)
         alt3 = union.alternatives[2]
         assert isinstance(alt3, str)
+        assert alt3 == '"literal"', f"Expected '\"literal\"' but got {alt3!r}"
+
+    def test_union_enum_literals_preserve_quotes(self) -> None:
+        """Union string literals should preserve quotes to distinguish from type refs."""
+        source = """
+        datadict {
+            Status = "pending" | "approved" | "rejected"
+        }
+        """
+        doc = parse_string(source)
+        union = doc.datadicts[0].definitions[0].definition
+        assert isinstance(union, UnionDefNode)
+
+        # All alternatives should be quoted strings
+        for alt in union.alternatives:
+            assert isinstance(alt, str)
+            assert alt.startswith('"') or alt.startswith("'"), (
+                f"Expected quoted string, got {alt!r}"
+            )
+
+        assert union.alternatives[0] == '"pending"'
+        assert union.alternatives[1] == '"approved"'
+        assert union.alternatives[2] == '"rejected"'
+
+    def test_union_type_refs_unquoted(self) -> None:
+        """Union type references should be unquoted strings or DataDictTypeRefNode."""
+        source = """
+        datadict {
+            PaymentMethod = CreditCard | BankTransfer | Cash
+        }
+        """
+        doc = parse_string(source)
+        union = doc.datadicts[0].definitions[0].definition
+        assert isinstance(union, UnionDefNode)
+
+        # All alternatives should be unquoted strings (simple identifiers)
+        for alt in union.alternatives:
+            assert isinstance(alt, str)
+            assert not alt.startswith('"') and not alt.startswith("'"), (
+                f"Expected unquoted string, got {alt!r}"
+            )
+
+        assert union.alternatives[0] == "CreditCard"
+        assert union.alternatives[1] == "BankTransfer"
+        assert union.alternatives[2] == "Cash"
+
+    def test_union_mixed_quoted_unquoted(self) -> None:
+        """Parser should distinguish quoted and unquoted strings in unions."""
+        source = """
+        datadict {
+            Mixed = "literal" | TypeRef
+        }
+        """
+        doc = parse_string(source)
+        union = doc.datadicts[0].definitions[0].definition
+        assert isinstance(union, UnionDefNode)
+
+        assert len(union.alternatives) == 2
+        # First is quoted (enum literal)
+        assert union.alternatives[0] == '"literal"'
+        # Second is unquoted (type reference)
+        assert union.alternatives[1] == "TypeRef"
 
     def test_qualified_type_ref_in_array(self) -> None:
         """Array element types should support qualified type references."""
@@ -1405,7 +1467,7 @@ class TestQualifiedTypeRefParsing:
         source = """
         datadict NS {
             TypeA = {
-                qualified: Other.Type
+                qualified: Other.Type,
                 simple: LocalType
             }
         }
@@ -1433,7 +1495,7 @@ class TestQualifiedTypeRefParsing:
 
         datadict {
             MyStruct = {
-                config: ServiceA.Config [optional]
+                config: ServiceA.Config [optional],
                 name: string [pattern: "^[a-z]+$"]
             }
         }
@@ -1453,3 +1515,91 @@ class TestQualifiedTypeRefParsing:
         assert name_field.type_ref.name == "string"
         assert len(name_field.constraints) == 1
         assert name_field.constraints[0].kind == "pattern"
+
+
+class TestStructCommaRequirement:
+    """Tests for struct field comma syntax requirements.
+
+    Struct fields must be separated by commas. Trailing commas are not allowed.
+    """
+
+    def test_struct_fields_require_comma_separator(self) -> None:
+        """Struct fields without comma separator should produce parse error."""
+        source = """
+        datadict {
+            Address = {
+                street: string
+                city: string
+            }
+        }
+        """
+        with pytest.raises(ParseError):
+            parse_string(source)
+
+    def test_struct_trailing_comma_error(self) -> None:
+        """Trailing commas in struct fields should produce a parse error."""
+        source = """
+        datadict {
+            Address = {
+                street: string,
+                city: string,
+            }
+        }
+        """
+        with pytest.raises(ParseError):
+            parse_string(source)
+
+    def test_struct_with_commas_valid(self) -> None:
+        """Struct with proper comma separators should parse correctly."""
+        source = """
+        datadict {
+            Address = {
+                street: string,
+                city: string,
+                postal_code: string
+            }
+        }
+        """
+        doc = parse_string(source)
+        assert len(doc.datadicts) == 1
+        struct = doc.datadicts[0].definitions[0].definition
+        assert isinstance(struct, StructDefNode)
+        assert len(struct.fields) == 3
+
+    def test_single_field_struct_no_comma_valid(self) -> None:
+        """Single field struct should not require comma (no separator needed)."""
+        source = """
+        datadict {
+            Simple = { value: string }
+        }
+        """
+        doc = parse_string(source)
+        struct = doc.datadicts[0].definitions[0].definition
+        assert isinstance(struct, StructDefNode)
+        assert len(struct.fields) == 1
+
+    def test_empty_struct_valid(self) -> None:
+        """Empty struct should be valid."""
+        source = """
+        datadict {
+            Empty = { }
+        }
+        """
+        doc = parse_string(source)
+        struct = doc.datadicts[0].definitions[0].definition
+        assert isinstance(struct, StructDefNode)
+        assert len(struct.fields) == 0
+
+    def test_struct_inline_with_commas_valid(self) -> None:
+        """Struct fields on single line with commas should parse."""
+        source = """
+        datadict {
+            Point = { x: integer, y: integer }
+        }
+        """
+        doc = parse_string(source)
+        struct = doc.datadicts[0].definitions[0].definition
+        assert isinstance(struct, StructDefNode)
+        assert len(struct.fields) == 2
+        assert struct.fields[0].name == "x"
+        assert struct.fields[1].name == "y"

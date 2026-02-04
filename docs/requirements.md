@@ -237,8 +237,14 @@ The DSL shall support Data Dictionary definitions using the `datadict` keyword.
 **Acceptance Criteria:**
 - Data dictionary declared with `datadict { ... }`
 - Type definitions: `TypeName = definition`
-- Struct types: `{ field: type, ... }`
-- Union types (enumerations): `"literal1" | "literal2" | TypeRef`
+- Struct types: `{ field1: type1, field2: type2, ... }`
+- Struct fields are separated by commas (required)
+- Trailing commas in structs are not allowed
+- Empty structs are valid: `{ }`
+- Union types come in two mutually exclusive forms:
+  - **Enum literals**: `"literal1" | "literal2"` - quoted strings representing discrete values
+  - **Type unions**: `TypeA | TypeB` - unquoted identifiers representing a choice between types
+  - Mixing quoted and unquoted alternatives in a single union is not allowed
 - Array types: `ElementType[]` with optional constraints `[min: N, max: M]`
 - Type references: `OtherTypeName`
 - Field constraints: `optional`, `pattern: "regex"`, `min: N`, `max: N`
@@ -246,21 +252,34 @@ The DSL shall support Data Dictionary definitions using the `datadict` keyword.
 **Example:**
 ```
 datadict {
+    // Enum literals (quoted strings)
     OrderStatus = "draft" | "submitted" | "shipped" | "delivered"
     
+    // Type union (unquoted identifiers)
+    PaymentMethod = CreditCard | BankTransfer | Cash
+    
     Address = {
-        street: string
-        city: string
-        postal_code: string [pattern: "[0-9]{5}"]
+        street: string,
+        city: string,
+        postal_code: string [pattern: "[0-9]{5}"],
         country: string
     }
     
     Money = {
-        amount: decimal [min: 0]
+        amount: decimal [min: 0],
         currency: string [pattern: "[A-Z]{3}"]
     }
     
+    // Single-line struct
+    Point = { x: integer, y: integer }
+    
+    // Empty struct
+    Placeholder = { }
+    
     OrderItems = OrderItem[] [min: 1, max: 100]
+    
+    // Type alias
+    Currency = string
 }
 ```
 
@@ -608,11 +627,14 @@ Cyclic call chains shall generate a warning.
 ---
 
 #### REQ-SEM-050: Data Dictionary Type Reference Validation [DONE]
-Type references shall reference existing types or built-in types.
+Type references in struct fields, array element types, and type aliases shall reference existing types or built-in types.
 
 **Acceptance Criteria:**
 - WARNING if referenced type not defined in data dictionary
 - Built-in types (string, integer, etc.) are always valid
+- Applies to: struct field types, array element types, type aliases
+
+Note: Type union validation is covered by REQ-SEM-069.
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_datadict()`
 
@@ -788,6 +810,60 @@ datadict ServiceA {
 ```
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._resolve_type_ref()`
+
+---
+
+#### REQ-SEM-068: Union Type Consistency
+Union types shall not mix enum literals with type references.
+
+**Acceptance Criteria:**
+- ERROR if a union contains both quoted strings (enum literals) and unquoted identifiers (type references)
+- Pure enum unions (all quoted): valid
+- Pure type unions (all unquoted): valid
+- Mixed unions: error
+- Error message: `Union type 'X' mixes enum literals with type references`
+
+**Example:**
+```
+datadict {
+    // Valid: pure enum literals
+    Status = "pending" | "approved" | "rejected"
+    
+    // Valid: pure type union
+    PaymentMethod = CreditCard | BankTransfer | Cash
+    
+    // Invalid: mixed
+    Invalid = "pending" | SomeType  // ERROR
+}
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_datadict()`
+
+---
+
+#### REQ-SEM-069: Union Type Reference Validation
+Type references in union types shall be validated against existing types.
+
+**Acceptance Criteria:**
+- WARNING if a type union references an undefined type
+- Built-in types (string, integer, etc.) in unions are always valid
+- Enum literals (quoted strings) are not validated as type references
+
+**Example:**
+```
+datadict {
+    // WARNING: 'UndefinedType' is not defined
+    Result = Success | UndefinedType
+    
+    // No warning: built-in types are valid
+    Value = string | integer
+    
+    // No warning: enum literals are not type references
+    Status = "active" | "inactive"
+}
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_datadict()`
 
 ---
 

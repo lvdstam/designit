@@ -2553,3 +2553,119 @@ class TestDataDictNameConflicts:
         errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
         # No error - datadict namespace "Customer" can match external "Customer"
         assert len(errors) == 0, f"Unexpected errors: {[e.message for e in errors]}"
+
+
+class TestUnionTypeValidation:
+    """Tests for union type validation (REQ-SEM-068, REQ-SEM-069)."""
+
+    def test_pure_enum_union_valid(self) -> None:
+        """Pure enum union (all quoted strings) should be valid."""
+        source = """
+        datadict {
+            Status = "pending" | "approved" | "rejected"
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) == 0, f"Unexpected errors: {[e.message for e in errors]}"
+
+    def test_pure_type_union_with_defined_types_valid(self) -> None:
+        """Pure type union with defined types should be valid."""
+        source = """
+        datadict {
+            CreditCard = { number: string }
+            BankTransfer = { iban: string }
+            PaymentMethod = CreditCard | BankTransfer
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        assert len(errors) == 0, f"Unexpected errors: {[e.message for e in errors]}"
+        assert len(warnings) == 0, f"Unexpected warnings: {[w.message for w in warnings]}"
+
+    def test_pure_type_union_with_builtin_types_valid(self) -> None:
+        """Pure type union with built-in types should be valid."""
+        source = """
+        datadict {
+            Value = string | integer | boolean
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        assert len(errors) == 0, f"Unexpected errors: {[e.message for e in errors]}"
+        assert len(warnings) == 0, f"Unexpected warnings: {[w.message for w in warnings]}"
+
+    def test_mixed_union_error(self) -> None:
+        """REQ-SEM-068: Mixed union (enum literals + type refs) should produce error."""
+        source = """
+        datadict {
+            Mixed = "literal" | SomeType
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("mixes enum literals with type references" in e.message for e in errors)
+
+    def test_mixed_union_with_qualified_type_error(self) -> None:
+        """REQ-SEM-068: Mixed union with qualified type ref should produce error."""
+        source = """
+        datadict Namespace {
+            Type = { value: string }
+        }
+        datadict {
+            Mixed = "literal" | Namespace.Type
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
+        assert len(errors) >= 1
+        assert any("mixes enum literals with type references" in e.message for e in errors)
+
+    def test_type_union_undefined_type_warning(self) -> None:
+        """REQ-SEM-069: Type union with undefined type should produce warning."""
+        source = """
+        datadict {
+            Result = Success | UndefinedType
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        assert len(warnings) >= 1
+        assert any("UndefinedType" in w.message for w in warnings)
+
+    def test_type_union_multiple_undefined_types_warning(self) -> None:
+        """REQ-SEM-069: Type union with multiple undefined types should warn for each."""
+        source = """
+        datadict {
+            Status = UndefinedType1 | UndefinedType2
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        assert len(warnings) >= 2
+        assert any("UndefinedType1" in w.message for w in warnings)
+        assert any("UndefinedType2" in w.message for w in warnings)
+
+    def test_enum_union_no_type_validation(self) -> None:
+        """Enum literals should not be validated as type references."""
+        source = """
+        datadict {
+            Status = "UndefinedType1" | "UndefinedType2"
+        }
+        """
+        doc = analyze_string(source)
+        messages = validate(doc)
+        # No warnings for quoted strings - they are enum literals, not type refs
+        warnings = [m for m in messages if m.severity == ValidationSeverity.WARNING]
+        type_ref_warnings = [w for w in warnings if "undefined type" in w.message.lower()]
+        assert len(type_ref_warnings) == 0, f"Unexpected type ref warnings: {type_ref_warnings}"

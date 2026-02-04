@@ -99,65 +99,65 @@ datadict {
     TransactionStatus = "pending" | "processing" | "completed" | "failed" | "reversed"
 
     TransactionRequest = {
-        account_number: string [pattern: "[0-9]{10}"]
-        type: TransactionType
-        amount: decimal [min: 0.01]
-        currency: string [pattern: "[A-Z]{3}"]
-        description: string [optional, max: 255]
+        account_number: string [pattern: "[0-9]{10}"],
+        type: TransactionType,
+        amount: decimal [min: 0.01],
+        currency: string [pattern: "[A-Z]{3}"],
+        description: string [optional, max: 255],
         reference: string [optional]
     }
 
     TransactionResult = {
-        transaction_id: string
-        status: TransactionStatus
-        timestamp: datetime
-        balance_after: decimal
+        transaction_id: string,
+        status: TransactionStatus,
+        timestamp: datetime,
+        balance_after: decimal,
         message: string [optional]
     }
 
     TransferRequest = {
-        from_account: string [pattern: "[0-9]{10}"]
-        to_account: string
-        to_bank_code: string [optional]
-        amount: decimal [min: 0.01]
-        currency: string [pattern: "[A-Z]{3}"]
+        from_account: string [pattern: "[0-9]{10}"],
+        to_account: string,
+        to_bank_code: string [optional],
+        amount: decimal [min: 0.01],
+        currency: string [pattern: "[A-Z]{3}"],
         purpose: string [optional]
     }
 
     // Flow definitions for TransactionProcessing DFD
     ValidationResult = {
-        is_valid: boolean
-        error_code: string [optional]
+        is_valid: boolean,
+        error_code: string [optional],
         error_message: string [optional]
     }
 
     ValidatedTransaction = {
-        transaction_id: string
-        account_number: string
-        type: TransactionType
-        amount: decimal
+        transaction_id: string,
+        account_number: string,
+        type: TransactionType,
+        amount: decimal,
         validated_at: datetime
     }
 
     QueuedTransaction = {
-        queue_id: string
-        transaction: ValidatedTransaction
-        priority: integer
+        queue_id: string,
+        transaction: ValidatedTransaction,
+        priority: integer,
         queued_at: datetime
     }
 
     BalanceUpdate = {
-        account_id: string
-        previous_balance: decimal
-        new_balance: decimal
+        account_id: string,
+        previous_balance: decimal,
+        new_balance: decimal,
         transaction_id: string
     }
 
     AuditRecord = {
-        audit_id: string
-        transaction_id: string
-        action: string
-        timestamp: datetime
+        audit_id: string,
+        transaction_id: string,
+        action: string,
+        timestamp: datetime,
         details: string
     }
 

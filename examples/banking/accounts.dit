@@ -67,26 +67,26 @@ datadict {
 
     // Compound Types
     CustomerProfile = {
-        customer_id: integer
-        full_name: string
-        email: string
-        phone: string [optional]
+        customer_id: integer,
+        full_name: string,
+        email: string,
+        phone: string [optional],
         primary_address: Address
     }
 
     AccountSummary = {
-        account_number: string [pattern: "[0-9]{10}"]
-        account_type: AccountType
-        balance: decimal
-        currency: string
+        account_number: string [pattern: "[0-9]{10}"],
+        account_type: AccountType,
+        balance: decimal,
+        currency: string,
         status: AccountStatus
     }
 
     Address = {
-        street: string
-        city: string
-        state: string [optional]
-        postal_code: string
+        street: string,
+        city: string,
+        state: string [optional],
+        postal_code: string,
         country: string
     }
 
