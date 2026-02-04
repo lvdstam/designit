@@ -52,7 +52,9 @@ class GraphVizGenerator:
     def _write_dfd(self, dfd: DFDModel, out: TextIO) -> None:
         """Write DFD to DOT format."""
         out.write(f'digraph "{self._escape(dfd.name)}" {{\n')
-        out.write("  rankdir=LR;\n")
+        out.write("  layout=neato;\n")
+        out.write("  overlap=false;\n")
+        out.write("  splines=true;\n")
         out.write('  node [fontname="Helvetica"];\n')
         out.write('  edge [fontname="Helvetica"];\n\n')
 

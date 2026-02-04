@@ -1107,7 +1107,7 @@ The system shall generate GraphViz DOT files.
 DFDs shall be generated as GraphViz directed graphs.
 
 **Acceptance Criteria:**
-- Layout direction: LR (left to right) via `rankdir=LR`
+- Layout engine: `neato` (force-directed) with `overlap=false` and `splines=true`
 - Externals: `shape=box`
 - Processes: `shape=circle`
 - Datastores: `shape=cylinder`
