@@ -295,12 +295,11 @@ def _output_diagrams_to_files(
         console.print(f"[green]Generated:[/] {out_file}")
 
 
-def _validate_and_aggregate(
+def _validate_file(
     file: Path,
     no_check: bool,
-    no_aggregate_flows: bool,
 ) -> tuple[DocumentNode, DesignDocument]:
-    """Parse, validate, and optionally aggregate a design file.
+    """Parse and optionally validate a design file.
 
     Returns:
         Tuple of (parsed AST node, analyzed DesignDocument)
@@ -320,12 +319,6 @@ def _validate_and_aggregate(
             _print_summary(errors, warnings, infos)
             error_console.print("\n[yellow]Use --no-check to generate diagrams anyway[/]")
             sys.exit(1)
-
-    # Apply flow aggregation (unless disabled)
-    if not no_aggregate_flows:
-        from designit.semantic.aggregator import aggregate_flows
-
-        design_doc = aggregate_flows(design_doc)
 
     return doc_node, design_doc
 
@@ -412,11 +405,6 @@ def _generate_markdown_file(
 @click.option("--diagram", "-d", multiple=True, help="Only generate specific diagram(s)")
 @click.option("--no-placeholders", is_flag=True, help="Exclude placeholder elements")
 @click.option("--no-check", is_flag=True, help="Skip validation (generate even with errors)")
-@click.option(
-    "--no-aggregate-flows",
-    is_flag=True,
-    help="Disable flow aggregation (show all individual flows)",
-)
 def generate(
     file: Path,
     output_format: str,
@@ -426,7 +414,6 @@ def generate(
     diagram: tuple[str, ...],
     no_placeholders: bool,
     no_check: bool,
-    no_aggregate_flows: bool,
 ) -> None:
     """Generate diagrams and documentation from a DesignIt file.
 
@@ -449,8 +436,8 @@ def generate(
         if is_graphic_format:
             _check_graphviz_installed()
 
-        # Parse, validate, and aggregate
-        doc_node, design_doc = _validate_and_aggregate(file, no_check, no_aggregate_flows)
+        # Parse and validate
+        doc_node, design_doc = _validate_file(file, no_check)
 
         # Determine if we should generate markdown
         has_markdown_blocks = bool(doc_node.markdowns)
