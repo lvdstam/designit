@@ -752,3 +752,251 @@ class TestFlowUnionGeneratorIntegration:
 
         graphviz_bundled = generate_graphviz(doc, include_placeholders=True, expand_unions=False)
         assert len(graphviz_bundled) > 0
+
+
+class TestElementFlowsProperty:
+    """Tests for element flows property (REQ-DOC-015).
+
+    Elements (externals, datastores, processes) should expose their connected flows
+    via a `flows` property for documentation generation.
+    """
+
+    def test_scd_external_has_flows_property(self) -> None:
+        """REQ-DOC-015: SCD externals shall have flows property."""
+        source = """
+        datadict { Req = { data: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        user = scd.externals["User"]
+        assert hasattr(user, "flows")
+        assert len(user.flows) == 1
+        assert user.flows[0].name == "Req"
+
+    def test_scd_external_multiple_flows(self) -> None:
+        """REQ-DOC-015: SCD external with multiple flows shall list all."""
+        source = """
+        datadict {
+            Req = { data: string }
+            Resp = { result: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Req(Req): Client -> Sys
+            flow Resp(Resp): Sys -> Client
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        client = scd.externals["Client"]
+        assert len(client.flows) == 2
+        flow_names = {f.name for f in client.flows}
+        assert flow_names == {"Req", "Resp"}
+
+    def test_scd_external_flows_includes_union_members(self) -> None:
+        """REQ-DOC-015: Element flows shall include flows from unions."""
+        source = """
+        datadict {
+            Req = { data: string }
+            Resp = { result: string }
+        }
+        scd Context {
+            system Sys {}
+            external Client {}
+            flow Req(Req): Client -> Sys
+            flow Resp(Resp): Sys -> Client
+            flow Bundle = Req | Resp
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        client = scd.externals["Client"]
+        # Flows are moved into union, but should still appear on element
+        assert len(client.flows) == 2
+        flow_names = {f.name for f in client.flows}
+        assert flow_names == {"Req", "Resp"}
+
+    def test_scd_system_has_flows_property(self) -> None:
+        """REQ-DOC-015: SCD system shall have flows property."""
+        source = """
+        datadict { Data = { value: string } }
+        scd Context {
+            system MainSys {}
+            external Ext {}
+            flow Data(Data): Ext -> MainSys
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        system = scd.system
+        assert system is not None
+        assert hasattr(system, "flows")
+        assert len(system.flows) == 1
+        assert system.flows[0].name == "Data"
+
+    def test_scd_datastore_has_flows_property(self) -> None:
+        """REQ-DOC-015: SCD datastores shall have flows property."""
+        source = """
+        datadict { Config = { value: string } }
+        scd Context {
+            system Sys {}
+            datastore ConfigStore {}
+            flow Config(Config): Sys -> ConfigStore
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        datastore = scd.datastores["ConfigStore"]
+        assert hasattr(datastore, "flows")
+        assert len(datastore.flows) == 1
+        assert datastore.flows[0].name == "Config"
+
+    def test_dfd_process_has_flows_property(self) -> None:
+        """REQ-DOC-015: DFD processes shall have flows property."""
+        source = """
+        datadict { Req = { data: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Context.Req: -> Handler
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Level0"]
+        handler = dfd.processes["Handler"]
+        assert hasattr(handler, "flows")
+        assert len(handler.flows) == 1
+        assert handler.flows[0].name == "Req"
+
+    def test_dfd_process_multiple_flows(self) -> None:
+        """REQ-DOC-015: DFD process with multiple flows shall list all."""
+        source = """
+        datadict {
+            Req = { data: string }
+            Internal = { value: string }
+        }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process A {}
+            process B {}
+            flow Context.Req: -> A
+            flow Internal(Internal): A -> B
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Level0"]
+        proc_a = dfd.processes["A"]
+        # A has: Req (inbound), Internal (as source)
+        assert len(proc_a.flows) == 2
+        flow_names = {f.name for f in proc_a.flows}
+        assert flow_names == {"Req", "Internal"}
+
+    def test_dfd_process_flows_includes_union_members(self) -> None:
+        """REQ-DOC-015: DFD process flows shall include flows from unions."""
+        source = """
+        datadict {
+            Req = { data: string }
+            Int1 = { a: string }
+            Int2 = { b: string }
+        }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process A {}
+            process B {}
+            flow Context.Req: -> A
+            flow Int1(Int1): A -> B
+            flow Int2(Int2): B -> A
+            flow Bundle = Int1 | Int2
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Level0"]
+        proc_b = dfd.processes["B"]
+        # B has: Int1 (target), Int2 (source) - both in union
+        assert len(proc_b.flows) == 2
+        flow_names = {f.name for f in proc_b.flows}
+        assert flow_names == {"Int1", "Int2"}
+
+    def test_dfd_datastore_has_flows_property(self) -> None:
+        """REQ-DOC-015: DFD datastores shall have flows property."""
+        source = """
+        datadict {
+            Req = { data: string }
+            Cache = { data: string }
+        }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            datastore DataCache {}
+            flow Context.Req: -> Handler
+            flow Cache(Cache): Handler -> DataCache
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Level0"]
+        datastore = dfd.datastores["DataCache"]
+        assert hasattr(datastore, "flows")
+        assert len(datastore.flows) == 1
+        assert datastore.flows[0].name == "Cache"
+
+    def test_element_flow_has_direction(self) -> None:
+        """REQ-DOC-015: Flow accessed via element shall have direction."""
+        source = """
+        datadict { Req = { data: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        user = scd.externals["User"]
+        flow = user.flows[0]
+        assert hasattr(flow, "direction")
+        # User -> Sys means outbound from User's perspective, inbound to system
+        assert flow.direction in ("inbound", "outbound", "bidirectional")
+
+    def test_element_flow_has_description(self) -> None:
+        """REQ-DOC-015: Flow accessed via element shall have description."""
+        source = """
+        datadict { Req = { data: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys {
+                description: "User request"
+            }
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        user = scd.externals["User"]
+        flow = user.flows[0]
+        assert flow.description == "User request"

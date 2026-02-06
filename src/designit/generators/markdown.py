@@ -79,8 +79,8 @@ class TemplateParser:
     # Pattern for diagram insertion: diagram:Name
     DIAGRAM_PATTERN = re.compile(r"^diagram:(\w+)$")
 
-    # Pattern for each start: #each Diagram.collection
-    EACH_START_PATTERN = re.compile(r"^#each\s+(\w+)\.(\w+)$")
+    # Pattern for each start: #each Diagram.collection or #each collection (nested)
+    EACH_START_PATTERN = re.compile(r"^#each\s+(\w+)(?:\.(\w+))?$")
 
     # Pattern for each end: /each
     EACH_END_PATTERN = re.compile(r"^/each$")
@@ -188,15 +188,30 @@ class TemplateParser:
         # Try each start pattern
         match = self.EACH_START_PATTERN.match(content)
         if match:
-            return TemplateExpr(
-                expr_type=TemplateExprType.EACH_START,
-                raw=raw,
-                content=content,
-                each_diagram=match.group(1),
-                each_collection=match.group(2),
-                line=line,
-                column=column,
-            )
+            # If group(2) is None, this is a nested collection (e.g., #each flows)
+            # In that case, group(1) is the collection name, not the diagram
+            if match.group(2) is None:
+                # Nested form: #each collection
+                return TemplateExpr(
+                    expr_type=TemplateExprType.EACH_START,
+                    raw=raw,
+                    content=content,
+                    each_diagram=None,  # No diagram - nested in element context
+                    each_collection=match.group(1),  # Collection name
+                    line=line,
+                    column=column,
+                )
+            else:
+                # Full form: #each Diagram.collection
+                return TemplateExpr(
+                    expr_type=TemplateExprType.EACH_START,
+                    raw=raw,
+                    content=content,
+                    each_diagram=match.group(1),
+                    each_collection=match.group(2),
+                    line=line,
+                    column=column,
+                )
 
         # Try each end pattern
         match = self.EACH_END_PATTERN.match(content)
@@ -264,6 +279,24 @@ VALID_COLLECTIONS: dict[str, set[str]] = {
     "std": {"states", "transitions"},
     "structure": {"modules"},
     "datadict": {"definitions"},
+}
+
+# Valid nested collections for element types (per REQ-DOC-015)
+# These are collections accessible via {{#each collection}} inside element iteration
+ELEMENT_NESTED_COLLECTIONS: dict[str, set[str]] = {
+    # SCD elements with flows
+    "scd_external": {"flows"},
+    "scd_datastore": {"flows"},
+    "system": {"flows"},
+    # DFD elements with flows
+    "process": {"flows"},
+    "datastore": {"flows"},
+}
+
+# Properties for nested flow elements
+NESTED_FLOW_PROPERTIES: dict[str, set[str]] = {
+    "scd_flow": {"name", "direction", "description", "source_file", "line"},
+    "dfd_flow": {"name", "flow_type", "description", "source_file", "line"},
 }
 
 # Valid properties for elements in each collection
@@ -335,6 +368,17 @@ ELEMENT_PROPERTIES: dict[str, set[str]] = {
 
 
 @dataclass
+class IterationContext:
+    """Context for tracking nested iteration."""
+
+    diagram_name: str | None  # The diagram being iterated (None for nested)
+    diagram_type: str | None  # "scd", "dfd", etc.
+    collection: str  # The collection name being iterated
+    element_type: str  # The element type in this collection
+    is_nested: bool = False  # Whether this is a nested iteration (e.g., #each flows)
+
+
+@dataclass
 class ValidationResult:
     """Result of template validation."""
 
@@ -354,6 +398,7 @@ class TemplateValidator:
     - {{diagram:X}} - diagram X exists
     - {{X.Y.property}} - diagram X, element Y, and property exist
     - {{#each X.collection}} - diagram X and collection are valid
+    - {{#each collection}} - nested collection is valid in current context
     """
 
     MAX_ERRORS = 10  # Stop after this many errors (per REQ-DOC-020)
@@ -381,7 +426,8 @@ class TemplateValidator:
         """
         self.errors = []
         self.warnings = []
-        each_stack: list[tuple[str, str]] = []  # Stack of (diagram, collection) for context
+        # Stack of IterationContext for tracking nested iterations
+        each_stack: list[IterationContext] = []
 
         for expr in expressions:
             if len(self.errors) >= self.MAX_ERRORS:
@@ -392,9 +438,9 @@ class TemplateValidator:
             elif expr.expr_type == TemplateExprType.PROPERTY:
                 self._validate_property(expr, each_stack)
             elif expr.expr_type == TemplateExprType.EACH_START:
-                self._validate_each_start(expr)
-                if expr.each_diagram and expr.each_collection:
-                    each_stack.append((expr.each_diagram, expr.each_collection))
+                context = self._validate_each_start(expr, each_stack)
+                if context:
+                    each_stack.append(context)
             elif expr.expr_type == TemplateExprType.EACH_END:
                 if each_stack:
                     each_stack.pop()
@@ -443,18 +489,29 @@ class TemplateValidator:
                 expr,
             )
 
-    def _validate_each_start(self, expr: TemplateExpr) -> None:
-        """Validate an each iteration start expression."""
-        if not expr.each_diagram or not expr.each_collection:
-            return
+    def _validate_each_start(
+        self, expr: TemplateExpr, each_stack: list[IterationContext]
+    ) -> IterationContext | None:
+        """Validate an each iteration start expression.
 
+        Returns:
+            IterationContext to push onto the stack, or None if invalid.
+        """
+        if not expr.each_collection:
+            return None
+
+        # Check if this is a nested iteration (no diagram specified)
+        if expr.each_diagram is None:
+            return self._validate_nested_each(expr, each_stack)
+
+        # Full form: {{#each Diagram.collection}}
         result = self._get_diagram(expr.each_diagram)
         if result is None:
             self._add_error(
                 f"Unknown diagram: '{expr.each_diagram}'",
                 expr,
             )
-            return
+            return None
 
         _, diagram_type = result
         valid_collections = VALID_COLLECTIONS.get(diagram_type, set())
@@ -465,8 +522,79 @@ class TemplateValidator:
                 f"Valid collections: {', '.join(sorted(valid_collections))}",
                 expr,
             )
+            return None
 
-    def _validate_property(self, expr: TemplateExpr, each_stack: list[tuple[str, str]]) -> None:
+        # Get the element type for this collection
+        element_type = self._collection_to_element_type(diagram_type, expr.each_collection)
+
+        return IterationContext(
+            diagram_name=expr.each_diagram,
+            diagram_type=diagram_type,
+            collection=expr.each_collection,
+            element_type=element_type,
+            is_nested=False,
+        )
+
+    def _validate_nested_each(
+        self, expr: TemplateExpr, each_stack: list[IterationContext]
+    ) -> IterationContext | None:
+        """Validate a nested each expression (e.g., {{#each flows}}).
+
+        Args:
+            expr: The each expression with each_diagram=None.
+            each_stack: Current iteration context stack.
+
+        Returns:
+            IterationContext to push, or None if invalid.
+        """
+        if not each_stack:
+            self._add_error(
+                f"Nested '{{{{#each {expr.each_collection}}}}}' requires an outer "
+                f"'{{{{#each Diagram.collection}}}}' block",
+                expr,
+            )
+            return None
+
+        parent_context = each_stack[-1]
+
+        # Check if the parent element type supports this nested collection
+        valid_nested = ELEMENT_NESTED_COLLECTIONS.get(parent_context.element_type, set())
+
+        if expr.each_collection not in valid_nested:
+            if valid_nested:
+                self._add_error(
+                    f"Invalid nested collection '{expr.each_collection}' for "
+                    f"{parent_context.element_type} elements. "
+                    f"Valid nested collections: {', '.join(sorted(valid_nested))}",
+                    expr,
+                )
+            else:
+                self._add_error(
+                    f"Element type '{parent_context.element_type}' does not support "
+                    f"nested collections",
+                    expr,
+                )
+            return None
+
+        # Determine the element type for the nested collection
+        # For flows, it depends on the diagram type
+        if expr.each_collection == "flows":
+            if parent_context.diagram_type == "scd":
+                nested_element_type = "scd_flow"
+            else:
+                nested_element_type = "dfd_flow"
+        else:
+            nested_element_type = "base"
+
+        return IterationContext(
+            diagram_name=parent_context.diagram_name,
+            diagram_type=parent_context.diagram_type,
+            collection=expr.each_collection,
+            element_type=nested_element_type,
+            is_nested=True,
+        )
+
+    def _validate_property(self, expr: TemplateExpr, each_stack: list[IterationContext]) -> None:
         """Validate a property access expression.
 
         Args:
@@ -492,7 +620,7 @@ class TemplateValidator:
             )
 
     def _validate_single_part_path(
-        self, path: list[str], each_stack: list[tuple[str, str]], expr: TemplateExpr
+        self, path: list[str], each_stack: list[IterationContext], expr: TemplateExpr
     ) -> None:
         """Validate a single-part property path (must be inside #each block)."""
         if not each_stack:
@@ -501,8 +629,23 @@ class TemplateValidator:
                 expr,
             )
             return
-        diagram_name, collection = each_stack[-1]
-        self._validate_collection_element_property(diagram_name, collection, path[0], expr)
+
+        # Get the current context (innermost #each block)
+        context = each_stack[-1]
+
+        # Get valid properties for the current element type
+        valid_props = ELEMENT_PROPERTIES.get(context.element_type, ELEMENT_PROPERTIES["base"])
+
+        # Also check nested flow properties if this is a nested flow context
+        if context.is_nested and context.element_type in NESTED_FLOW_PROPERTIES:
+            valid_props = NESTED_FLOW_PROPERTIES[context.element_type]
+
+        if path[0] not in valid_props:
+            self._add_error(
+                f"Unknown property '{path[0]}' for {context.element_type} elements. "
+                f"Valid properties: {', '.join(sorted(valid_props))}",
+                expr,
+            )
 
     def _validate_two_part_path(self, path: list[str], expr: TemplateExpr) -> None:
         """Validate a two-part path: Diagram.Element or Diagram.property."""
@@ -830,7 +973,7 @@ class MarkdownGenerator:
                 else:
                     # Get the block content (between #each and /each)
                     block = expressions[i + 1 : end_idx]
-                    self._render_each_block(expr, block, output)
+                    self._render_each_block(expr, block, output, context)
                     i = end_idx + 1
 
             elif expr.expr_type == TemplateExprType.EACH_END:
@@ -1012,16 +1155,32 @@ class MarkdownGenerator:
         each_expr: TemplateExpr,
         block: list[TemplateExpr],
         output: list[str],
+        parent_context: Any | None,
     ) -> None:
-        """Render an #each block by iterating over a collection."""
-        if not each_expr.each_diagram or not each_expr.each_collection:
-            return
+        """Render an #each block by iterating over a collection.
 
-        diagram = self._get_diagram_by_name(each_expr.each_diagram)
-        if diagram is None:
-            return
+        Args:
+            each_expr: The #each expression with collection info.
+            block: The expressions inside the #each block.
+            output: The output list to append to.
+            parent_context: The context from an outer #each block (for nested iteration).
+        """
+        collection: list[Any] | None = None
 
-        collection = self._get_collection(diagram, each_expr.each_collection)
+        if each_expr.each_diagram is None:
+            # Nested iteration: {{#each flows}} - get collection from parent context
+            if parent_context is None or not each_expr.each_collection:
+                return
+            collection = self._get_nested_collection(parent_context, each_expr.each_collection)
+        else:
+            # Top-level iteration: {{#each Diagram.collection}}
+            if not each_expr.each_collection:
+                return
+            diagram = self._get_diagram_by_name(each_expr.each_diagram)
+            if diagram is None:
+                return
+            collection = self._get_collection(diagram, each_expr.each_collection)
+
         if collection is None:
             return
 
@@ -1029,6 +1188,22 @@ class MarkdownGenerator:
         for item in collection:
             # Render the block with this item as context
             self._render_expressions(block, output, context=item)
+
+    def _get_nested_collection(self, context: Any, collection_name: str) -> list[Any] | None:
+        """Get a nested collection from an element context.
+
+        Args:
+            context: The current element being iterated.
+            collection_name: The nested collection name (e.g., "flows").
+
+        Returns:
+            List of items in the nested collection, or None.
+        """
+        if hasattr(context, collection_name):
+            coll = getattr(context, collection_name)
+            if isinstance(coll, list):
+                return coll
+        return None
 
     def _get_collection(self, diagram: Any, collection_name: str) -> list[Any] | None:
         """Get a collection from a diagram."""

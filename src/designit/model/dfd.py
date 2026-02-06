@@ -16,19 +16,19 @@ FlowKey = tuple[str, FlowType]
 class ExternalEntity(BaseElement):
     """An external entity in a DFD."""
 
-    pass
+    flows: list[DataFlow] = Field(default_factory=list)
 
 
 class Process(BaseElement):
     """A process in a DFD."""
 
-    pass
+    flows: list[DataFlow] = Field(default_factory=list)
 
 
 class Datastore(BaseElement):
     """A data store in a DFD."""
 
-    pass
+    flows: list[DataFlow] = Field(default_factory=list)
 
 
 class RefinesRef(BaseModel):

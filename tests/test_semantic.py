@@ -352,6 +352,88 @@ class TestSCDValidation:
         assert any("not involve" in m.message.lower() or "Core" in m.message for m in warnings)
 
 
+class TestFlowDescriptionTransfer:
+    """Tests for flow description transfer to semantic model (REQ-SEM-120)."""
+
+    def test_scd_flow_description_transferred(self) -> None:
+        """REQ-SEM-120: SCD flow descriptions shall be in semantic model."""
+        source = """
+        datadict { Req = { data: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys {
+                description: "User request to system"
+            }
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        flow = scd.flows["Req"]
+        assert flow.description == "User request to system"
+
+    def test_scd_flow_without_description(self) -> None:
+        """REQ-SEM-120: SCD flows without description should have None."""
+        source = """
+        datadict { Req = { data: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys
+        }
+        """
+        doc = analyze_string(source)
+        scd = doc.scds["Context"]
+        flow = scd.flows["Req"]
+        assert flow.description is None
+
+    def test_dfd_internal_flow_description_transferred(self) -> None:
+        """REQ-SEM-120: DFD internal flow descriptions shall be in semantic model."""
+        source = """
+        datadict { Data = { value: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Data(Data): User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process A {}
+            process B {}
+            flow Context.Data: -> A
+            flow Internal(Data): A -> B {
+                description: "Internal data transfer"
+            }
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Level0"]
+        internal_flow = dfd.flows[("Internal", "internal")]
+        assert internal_flow.description == "Internal data transfer"
+
+    def test_dfd_boundary_flow_description_transferred(self) -> None:
+        """REQ-SEM-120: DFD boundary flow descriptions shall be in semantic model."""
+        source = """
+        datadict { Req = { data: string } }
+        scd Context {
+            system Sys {}
+            external User {}
+            flow Req(Req): User -> Sys
+        }
+        dfd Level0 {
+            refines: Context.Sys
+            process Handler {}
+            flow Context.Req: -> Handler {
+                description: "Incoming user request"
+            }
+        }
+        """
+        doc = analyze_string(source)
+        dfd = doc.dfds["Level0"]
+        boundary_flow = dfd.flows[("Req", "inbound")]
+        assert boundary_flow.description == "Incoming user request"
+
+
 class TestFlowDataDictValidation:
     """Tests for flow data dictionary validation (REQ-SEM-061, REQ-SEM-062)."""
 

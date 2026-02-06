@@ -15,19 +15,19 @@ SCDDirection = Literal["inbound", "outbound", "bidirectional"]
 class System(BaseElement):
     """The system being modeled in an SCD."""
 
-    pass
+    flows: list[SCDFlow] = Field(default_factory=list)
 
 
 class SCDExternalEntity(BaseElement):
     """An external entity in an SCD (same structure as DFD external)."""
 
-    pass
+    flows: list[SCDFlow] = Field(default_factory=list)
 
 
 class SCDDatastore(BaseElement):
     """A data store in an SCD (same structure as DFD datastore)."""
 
-    pass
+    flows: list[SCDFlow] = Field(default_factory=list)
 
 
 class SCDFlowTypeRef(BaseModel):

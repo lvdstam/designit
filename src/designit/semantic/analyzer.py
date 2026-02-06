@@ -158,6 +158,20 @@ class SemanticAnalyzer:
             result[prop.name] = prop.value
         return result
 
+    def _get_description(self, properties: list[Any]) -> str | None:
+        """Extract description from a properties list.
+
+        Args:
+            properties: List of PropertyNode objects.
+
+        Returns:
+            The description string or None if not found.
+        """
+        for prop in properties:
+            if prop.name == "description" and isinstance(prop.value, str):
+                return prop.value
+        return None
+
     def _is_placeholder(self, node: BlockNode | PlaceholderNode) -> bool:
         """Check if a node is a placeholder."""
         if isinstance(node, PlaceholderNode):
@@ -218,10 +232,37 @@ class SemanticAnalyzer:
         inbound_handlers = self._analyze_dfd_flows(node, model, source_file)
         self._analyze_dfd_flow_unions(node, model, source_file)
 
+        # Populate flows on elements (after unions are processed)
+        self._populate_dfd_element_flows(model)
+
         # Store inbound handler counts in metadata for later validation
         model._inbound_flow_handlers = inbound_handlers  # type: ignore[attr-defined]
 
         return model
+
+    def _populate_dfd_element_flows(self, model: DFDModel) -> None:
+        """Populate the flows property on each DFD element.
+
+        This collects all flows (standalone and union members) and adds them
+        to the relevant elements for template access.
+        """
+        # Collect all flows: standalone + union members
+        all_flows: list[DataFlow] = list(model.flows.values())
+        for union in model.flow_unions.values():
+            all_flows.extend(union.members)
+
+        # Add flows to elements
+        for flow in all_flows:
+            # Add to source element (may be None for boundary inbound flows)
+            if flow.source is not None:
+                source_elem = model.get_element(flow.source.name)
+                if source_elem is not None:
+                    source_elem.flows.append(flow)
+            # Add to target element (may be None for boundary outbound flows)
+            if flow.target is not None:
+                target_elem = model.get_element(flow.target.name)
+                if target_elem is not None:
+                    target_elem.flows.append(flow)
 
     def _analyze_dfd_externals(
         self, node: DFDNode, model: DFDModel, source_file: str | None
@@ -296,6 +337,7 @@ class SemanticAnalyzer:
                 flow_type=flow_type,
                 type_ref=self._convert_flow_type_ref(flow.type_ref),
                 parent_ref=flow.namespace,  # Parent diagram for inherited boundary flows
+                description=self._get_description(flow.properties),
                 source_file=source_file,
                 line=flow.location.line if flow.location else None,
             )
@@ -796,6 +838,7 @@ class SemanticAnalyzer:
                 target=ElementReference(name=flow.target),
                 direction=direction,
                 type_ref=self._convert_scd_flow_type_ref(flow.type_ref),
+                description=self._get_description(flow.properties),
                 source_file=source_file,
                 line=flow.location.line if flow.location else None,
             )
@@ -806,7 +849,32 @@ class SemanticAnalyzer:
         # Process flow unions
         self._analyze_scd_flow_unions(node, model, source_file)
 
+        # Populate flows on elements (after unions are processed)
+        self._populate_scd_element_flows(model)
+
         return model
+
+    def _populate_scd_element_flows(self, model: SCDModel) -> None:
+        """Populate the flows property on each SCD element.
+
+        This collects all flows (standalone and union members) and adds them
+        to the relevant elements for template access.
+        """
+        # Collect all flows: standalone + union members
+        all_flows: list[SCDFlow] = list(model.flows.values())
+        for union in model.flow_unions.values():
+            all_flows.extend(union.members)
+
+        # Add flows to elements
+        for flow in all_flows:
+            # Add to source element
+            source_elem = model.get_element(flow.source.name)
+            if source_elem is not None:
+                source_elem.flows.append(flow)
+            # Add to target element
+            target_elem = model.get_element(flow.target.name)
+            if target_elem is not None:
+                target_elem.flows.append(flow)
 
     # ============================================
     # Document Analysis

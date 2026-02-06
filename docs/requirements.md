@@ -1402,6 +1402,18 @@ A child DFD shall not use both a flow union and any of its members.
 
 ---
 
+#### REQ-SEM-120: Flow Description Transfer [DONE]
+Flow descriptions declared in the DSL shall be transferred to the semantic model.
+
+**Acceptance Criteria:**
+- SCD flow descriptions available via `SCDFlow.description`
+- DFD flow descriptions available via `DataFlow.description`
+- Description extracted from flow properties block: `flow Name(Type): A -> B { description: "..." }`
+
+**Implementation:** `src/designit/semantic/analyzer.py`
+
+---
+
 ### 2.3 Import Resolution
 
 #### REQ-SEM-100: Import Path Resolution [DONE]
@@ -2491,6 +2503,32 @@ markdown {
 ```
 
 **Implementation:** `src/designit/generators/markdown.py`
+
+---
+
+#### REQ-DOC-015: Element Flow Access [DONE]
+Elements (externals, datastores, processes) shall expose their connected flows via a `flows` property.
+
+**Acceptance Criteria:**
+- SCD externals, datastores, and system have `flows` property listing connected flows
+- DFD processes and datastores have `flows` property listing connected flows
+- Flows include both standalone flows and flows inside unions
+- Each flow has `name`, `direction`, `description` accessible
+- Template can iterate: `{{#each flows}}...{{/each}}` inside element iteration
+
+**Example:**
+```
+markdown {
+    {{#each Context.externals}}
+    ### {{name}}
+    {{#each flows}}
+    - {{name}} ({{direction}}): {{description}}
+    {{/each}}
+    {{/each}}
+}
+```
+
+**Implementation:** `src/designit/model/scd.py`, `src/designit/model/dfd.py`, `src/designit/semantic/analyzer.py`, `src/designit/generators/markdown.py`
 
 ---
 

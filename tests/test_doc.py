@@ -631,6 +631,219 @@ class TestGenerateDocument:
         assert "Unknown diagram" in result.errors[0].message
 
 
+class TestNestedFlowIteration:
+    """Tests for nested flows iteration within element blocks (REQ-DOC-015)."""
+
+    def _make_document(self, source: str) -> DesignDocument:
+        """Helper to create a design document from source."""
+        return analyze_string(source)
+
+    def test_validate_nested_flows_in_scd_externals(self) -> None:
+        """{{#each flows}} should be valid inside {{#each Context.externals}}."""
+        source = """
+        datadict {
+            Request = { data: string }
+            Response = { data: string }
+        }
+        scd Context {
+            system API {}
+            external Client {}
+            flow Request(Request): Client -> API { description: "Client request" }
+            flow Response(Response): API -> Client { description: "Server response" }
+        }
+        """
+        doc = self._make_document(source)
+        parser = TemplateParser()
+        exprs = parser.parse(
+            "{{#each Context.externals}}{{name}}:{{#each flows}}{{name}}{{/each}}{{/each}}"
+        )
+
+        validator = TemplateValidator(doc)
+        result = validator.validate(exprs)
+
+        assert result.is_valid, f"Errors: {[e.message for e in result.errors]}"
+
+    def test_validate_nested_flows_in_dfd_processes(self) -> None:
+        """{{#each flows}} should be valid inside {{#each DFD.processes}}."""
+        source = """
+        datadict {
+            Request = { data: string }
+            CacheOp = { data: string }
+        }
+        scd Context {
+            system API {}
+            external Client {}
+            flow Request(Request): Client -> API
+        }
+        dfd Handler {
+            refines: Context.API
+            process Processor {}
+            datastore Cache {}
+            flow Context.Request: -> Processor
+            flow CacheOp(CacheOp): Processor -> Cache { description: "Cache operation" }
+        }
+        """
+        doc = self._make_document(source)
+        parser = TemplateParser()
+        exprs = parser.parse(
+            "{{#each Handler.processes}}{{name}}:{{#each flows}}{{name}}{{/each}}{{/each}}"
+        )
+
+        validator = TemplateValidator(doc)
+        result = validator.validate(exprs)
+
+        assert result.is_valid, f"Errors: {[e.message for e in result.errors]}"
+
+    def test_validate_flow_properties_in_nested_context(self) -> None:
+        """Flow properties should be accessible in nested {{#each flows}} context."""
+        source = """
+        datadict {
+            Request = { data: string }
+        }
+        scd Context {
+            system API {}
+            external Client {}
+            flow Request(Request): Client -> API { description: "Client request" }
+        }
+        """
+        doc = self._make_document(source)
+        parser = TemplateParser()
+        # Access flow name, direction, description
+        exprs = parser.parse(
+            "{{#each Context.externals}}"
+            "{{#each flows}}{{name}}-{{direction}}-{{description}}{{/each}}"
+            "{{/each}}"
+        )
+
+        validator = TemplateValidator(doc)
+        result = validator.validate(exprs)
+
+        assert result.is_valid, f"Errors: {[e.message for e in result.errors]}"
+
+    def test_validate_invalid_nested_collection(self) -> None:
+        """Invalid nested collection should fail validation."""
+        source = """
+        datadict {
+            Request = { data: string }
+        }
+        scd Context {
+            system API {}
+            external Client {}
+            flow Request(Request): Client -> API
+        }
+        """
+        doc = self._make_document(source)
+        parser = TemplateParser()
+        # 'invalid' is not a valid nested collection
+        exprs = parser.parse(
+            "{{#each Context.externals}}{{#each invalid}}{{name}}{{/each}}{{/each}}"
+        )
+
+        validator = TemplateValidator(doc)
+        result = validator.validate(exprs)
+
+        assert not result.is_valid
+        assert any("Invalid" in e.message or "invalid" in e.message for e in result.errors)
+
+    def test_generate_nested_flows_scd_external(self) -> None:
+        """Nested flows iteration should render for SCD externals."""
+        source = """
+        datadict {
+            Request = { data: string }
+            Response = { data: string }
+        }
+        scd Context {
+            system API {}
+            external Client {}
+            flow Request(Request): Client -> API { description: "Client request" }
+            flow Response(Response): API -> Client { description: "Server response" }
+        }
+        """
+        doc = self._make_document(source)
+        parser = TemplateParser()
+        exprs = parser.parse(
+            "{{#each Context.externals}}"
+            "### {{name}}\n"
+            "{{#each flows}}"
+            "- {{name}} ({{direction}}): {{description}}\n"
+            "{{/each}}"
+            "{{/each}}"
+        )
+
+        generator = MarkdownGenerator(doc)
+        result = generator.generate(exprs)
+
+        assert "### Client" in result.content
+        assert "- Request (inbound): Client request" in result.content
+        assert "- Response (outbound): Server response" in result.content
+
+    def test_generate_nested_flows_dfd_process(self) -> None:
+        """Nested flows iteration should render for DFD processes."""
+        source = """
+        datadict {
+            Request = { data: string }
+            CacheOp = { data: string }
+        }
+        scd Context {
+            system API {}
+            external Client {}
+            flow Request(Request): Client -> API
+        }
+        dfd Handler {
+            refines: Context.API
+            process Processor {}
+            datastore Cache {}
+            flow Context.Request: -> Processor { description: "Incoming request" }
+            flow CacheOp(CacheOp): Processor -> Cache { description: "Cache operation" }
+        }
+        """
+        doc = self._make_document(source)
+        parser = TemplateParser()
+        exprs = parser.parse(
+            "{{#each Handler.processes}}"
+            "### {{name}}\n"
+            "{{#each flows}}"
+            "- {{name}}: {{description}}\n"
+            "{{/each}}"
+            "{{/each}}"
+        )
+
+        generator = MarkdownGenerator(doc)
+        result = generator.generate(exprs)
+
+        assert "### Processor" in result.content
+        assert "- Request: Incoming request" in result.content
+        assert "- CacheOp: Cache operation" in result.content
+
+    def test_generate_nested_flows_empty(self) -> None:
+        """Nested flows iteration should handle elements with no flows."""
+        source = """
+        datadict {
+            Request = { data: string }
+        }
+        scd Context {
+            system API {}
+            external Client1 {}
+            external Client2 {}
+            flow Request(Request): Client1 -> API
+        }
+        """
+        doc = self._make_document(source)
+        parser = TemplateParser()
+        exprs = parser.parse(
+            "{{#each Context.externals}}### {{name}}\n{{#each flows}}- {{name}}\n{{/each}}{{/each}}"
+        )
+
+        generator = MarkdownGenerator(doc)
+        result = generator.generate(exprs)
+
+        # Client1 should have the flow
+        assert "### Client1" in result.content
+        assert "- Request" in result.content
+        # Client2 should appear but have no flows listed
+        assert "### Client2" in result.content
+
+
 class TestCollectionValidation:
     """Tests for collection validation per diagram type (REQ-DOC-012)."""
 

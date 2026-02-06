@@ -7,6 +7,16 @@ A Domain-Specific Language (DSL) for creating Yourdon-style design documents. Se
 - **Ask before running commands:** Always ask permission before executing shell commands. Show the user the commands you plan to run and let them execute the commands themselves if they prefer.
 - **Ask before making changes:** For significant changes, explain what you plan to do and get confirmation before proceeding.
 - **Flag requirement/implementation gaps:** When you discover that the implementation differs from what is specified in `docs/requirements.md` (and this is not due to a change you are currently making), flag this discrepancy and ask for guidance on how to proceed. Do not silently fix or ignore such gaps.
+- **Test-Driven Development (TDD):** When implementing new features or fixing bugs:
+  1. Write failing tests first that specify the expected behavior
+  2. Verify the tests actually fail (confirms they test the right thing)
+  3. Implement the minimal code to make tests pass
+  4. Run all quality checks before considering the task complete
+- **Requirements synchronization:** When making changes that affect functionality:
+  1. Check if the change relates to any requirement in `docs/requirements.md`
+  2. Update requirement status (e.g., [TODO] → [DONE]) when implementing
+  3. Add new requirements for new features before implementing
+  4. Reference requirement IDs in test docstrings (e.g., `"""Test for REQ-DOC-015."""`)
 
 ## External Documentation
 
