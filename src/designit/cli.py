@@ -258,18 +258,25 @@ def _generate_diagrams(
     doc: DesignDocument,
     output_format: str,
     include_placeholders: bool,
+    expand_unions: bool = False,
 ) -> tuple[dict[str, str], str]:
     """Generate diagram content based on format.
+
+    Args:
+        doc: The design document to generate diagrams from.
+        output_format: Output format (mermaid, dot, or graphic formats).
+        include_placeholders: Whether to include placeholder elements.
+        expand_unions: Whether to expand flow unions into individual flows.
 
     Returns:
         Tuple of (diagrams dict, file extension)
     """
     if output_format == "mermaid":
-        diagrams = generate_mermaid(doc, include_placeholders)
+        diagrams = generate_mermaid(doc, include_placeholders, expand_unions=expand_unions)
         extension = ".mmd"
     else:
         # All other formats use GraphViz DOT
-        diagrams = generate_graphviz(doc, include_placeholders)
+        diagrams = generate_graphviz(doc, include_placeholders, expand_unions=expand_unions)
         extension = ".dot" if output_format == "dot" else f".{output_format}"
     return diagrams, extension
 
@@ -405,6 +412,11 @@ def _generate_markdown_file(
 @click.option("--diagram", "-d", multiple=True, help="Only generate specific diagram(s)")
 @click.option("--no-placeholders", is_flag=True, help="Exclude placeholder elements")
 @click.option("--no-check", is_flag=True, help="Skip validation (generate even with errors)")
+@click.option(
+    "--expand-unions",
+    is_flag=True,
+    help="Expand flow unions into individual member flows (default: bundled)",
+)
 def generate(
     file: Path,
     output_format: str,
@@ -414,6 +426,7 @@ def generate(
     diagram: tuple[str, ...],
     no_placeholders: bool,
     no_check: bool,
+    expand_unions: bool,
 ) -> None:
     """Generate diagrams and documentation from a DesignIt file.
 
@@ -454,7 +467,9 @@ def generate(
         diagram_dir = output_diagram_dir or (default_base_dir / "diagrams")
 
         # Generate and filter diagrams
-        diagrams, extension = _generate_diagrams(design_doc, output_format, not no_placeholders)
+        diagrams, extension = _generate_diagrams(
+            design_doc, output_format, not no_placeholders, expand_unions
+        )
         if diagram:
             diagrams = {k: v for k, v in diagrams.items() if any(d in k for d in diagram)}
 

@@ -101,29 +101,29 @@ dfd BankingSystemLevel0 {
     }
 
     // Boundary Flows - handle inbound flows from parent SCD
-    flow LoginRequest: -> AuthenticateUser
-    flow TransactionRequest: -> ProcessTransaction
-    flow TellerQuery: -> HandleTellerRequest
-    flow AuditRequest: -> HandleCompliance
-    flow TransferData: -> HandleTransfer
+    flow BankingSystemContext.LoginRequest: -> AuthenticateUser
+    flow BankingSystemContext.TransactionRequest: -> ProcessTransaction
+    flow BankingSystemContext.TellerQuery: -> HandleTellerRequest
+    flow BankingSystemContext.AuditRequest: -> HandleCompliance
+    flow BankingSystemContext.TransferData: -> HandleTransfer
 
     // Boundary Flows - outbound flows to parent SCD
-    flow AccountInfo: AuthenticateUser ->
-    flow TransactionConfirmation: ProcessTransaction ->
-    flow CustomerData: HandleTellerRequest ->
-    flow ComplianceReport: HandleCompliance ->
+    flow BankingSystemContext.AccountInfo: AuthenticateUser ->
+    flow BankingSystemContext.TransactionConfirmation: ProcessTransaction ->
+    flow BankingSystemContext.CustomerData: HandleTellerRequest ->
+    flow BankingSystemContext.ComplianceReport: HandleCompliance ->
     // Note: TransferData is bidirectional, so we handle inbound above and outbound implicitly via HandleTransfer
 
     // Boundary Flows - to SCD datastores
-    flow CustomerLookup: AuthenticateUser ->
-    flow CustomerUpdate: ProcessTransaction ->
-    flow TransactionRecord: ProcessTransaction ->
-    flow AuditQuery: HandleCompliance ->
+    flow BankingSystemContext.CustomerLookup: AuthenticateUser ->
+    flow BankingSystemContext.CustomerUpdate: ProcessTransaction ->
+    flow BankingSystemContext.TransactionRecord: ProcessTransaction ->
+    flow BankingSystemContext.AuditQuery: HandleCompliance ->
 
     // Internal Flows
-    flow SessionData: AuthenticateUser -> SessionStore
-    flow InternalTransfer: ProcessTransaction -> HandleTransfer
-    flow HistoryQuery: GenerateReport -> ProcessTransaction
+    flow SessionDataFlow(SessionData): AuthenticateUser -> SessionStore
+    flow InternalTransferFlow(InternalTransfer): ProcessTransaction -> HandleTransfer
+    flow HistoryQueryFlow(HistoryQuery): GenerateReport -> ProcessTransaction
 }
 
 // State Transition Diagram for Transaction Processing

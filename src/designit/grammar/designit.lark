@@ -26,6 +26,7 @@ scd_body: system_decl _NL*
         | scd_external_decl _NL*
         | scd_datastore_decl _NL*
         | scd_flow_decl _NL*
+        | scd_flow_union_decl _NL*
 
 system_decl: SYSTEM IDENTIFIER block
 
@@ -33,13 +34,33 @@ scd_external_decl: EXTERNAL IDENTIFIER block
 
 scd_datastore_decl: DATASTORE IDENTIFIER block
 
-// Flow type can be simple (TypeName) or qualified (Namespace.TypeName)
-scd_flow_decl: FLOW flow_type_ref ":" scd_flow_endpoint scd_flow_arrow scd_flow_endpoint properties?
+// SCD flow declaration - requires data type clause (parentheses)
+// Syntax: flow FlowName(DataType): Source -> Target
+//         flow FlowName(Type1 | Type2): Source <-> Target  (union data type)
+//         flow FlowName(): Source -> Target  (control flow, no data)
+scd_flow_decl: FLOW IDENTIFIER flow_data_type_clause ":" scd_flow_endpoint scd_flow_arrow scd_flow_endpoint properties?
+
+// Data type clause - parentheses with optional content
+// Empty parentheses () = control flow (no data)
+// Single type = carries that type
+// Union = carries union of types (Type1 | Type2)
+flow_data_type_clause: "(" flow_data_type? ")"
+
+// Data type inside parentheses - single type or union
+flow_data_type: flow_type_ref ("|" flow_type_ref)*
+
+// Type reference - can be simple (TypeName) or qualified (Namespace.TypeName)
+flow_type_ref: IDENTIFIER ("." IDENTIFIER)?
 
 scd_flow_endpoint: IDENTIFIER
 
 scd_flow_arrow: ARROW           -> outbound_arrow
               | BIDI_ARROW      -> bidi_arrow
+
+// Flow union: flow UnionName = Flow1 | Flow2 | ...
+scd_flow_union_decl: FLOW IDENTIFIER "=" flow_union_members
+
+flow_union_members: IDENTIFIER ("|" IDENTIFIER)*
 
 // ============================================
 // Data Flow Diagram (DFD)
@@ -57,19 +78,37 @@ qualified_ref: IDENTIFIER "." IDENTIFIER
 dfd_body: process_decl _NL*
         | datastore_decl _NL*
         | flow_decl _NL*
+        | dfd_flow_union_decl _NL*
 
 process_decl: PROCESS IDENTIFIER block
 
 datastore_decl: DATASTORE IDENTIFIER block
 
-// Flow declarations support:
-// - Internal flows: flow Name: Source -> Target
-// - Boundary inbound: flow Name: -> Target
-// - Boundary outbound: flow Name: Source ->
-// Flow type can be simple (TypeName) or qualified (Namespace.TypeName)
-flow_decl: FLOW flow_type_ref ":" flow_endpoint "->" flow_endpoint properties?   -> internal_flow_decl
-         | FLOW flow_type_ref ":" "->" flow_endpoint properties?                 -> inbound_flow_decl
-         | FLOW flow_type_ref ":" flow_endpoint "->" properties?                 -> outbound_flow_decl
+// DFD Flow declarations - three kinds:
+// 1. Internal flows (both endpoints): flow Name(DataType): Source -> Target
+// 2. Boundary inbound: flow Parent.Name: -> Target  OR  flow Parent.Name(DataType): -> Target
+// 3. Boundary outbound: flow Parent.Name: Source ->  OR  flow Parent.Name(DataType): Source ->
+//
+// Flow name can be simple (local) or qualified (Parent.FlowName for boundary flows)
+// Boundary flows can omit parentheses to inherit data type from parent
+// Internal flows require parentheses with data type
+
+// Internal flow with explicit data type
+flow_decl: FLOW flow_name flow_data_type_clause ":" flow_endpoint "->" flow_endpoint properties?   -> internal_flow_decl
+         // Boundary inbound with explicit data type
+         | FLOW flow_name flow_data_type_clause ":" "->" flow_endpoint properties?                 -> inbound_flow_decl_typed
+         // Boundary outbound with explicit data type
+         | FLOW flow_name flow_data_type_clause ":" flow_endpoint "->" properties?                 -> outbound_flow_decl_typed
+         // Boundary inbound inherited (no parentheses)
+         | FLOW flow_name ":" "->" flow_endpoint properties?                                       -> inbound_flow_decl_inherited
+         // Boundary outbound inherited (no parentheses)
+         | FLOW flow_name ":" flow_endpoint "->" properties?                                       -> outbound_flow_decl_inherited
+
+// Flow name - simple (Name) or qualified (Parent.Name)
+flow_name: IDENTIFIER ("." IDENTIFIER)?
+
+// Flow union for DFD: flow UnionName = Flow1 | Flow2 | ...
+dfd_flow_union_decl: FLOW IDENTIFIER "=" flow_union_members
 
 flow_endpoint: IDENTIFIER ("." IDENTIFIER)?
 
@@ -209,9 +248,6 @@ MARKDOWN_PLACEHOLDER.5: /__MARKDOWN_\d+__/
 // ============================================
 // Common elements
 // ============================================
-
-// Flow type reference - can be simple (TypeName) or qualified (Namespace.TypeName)
-flow_type_ref: IDENTIFIER ("." IDENTIFIER)?
 
 block: "{" _NL* block_body* "}"
      | placeholder

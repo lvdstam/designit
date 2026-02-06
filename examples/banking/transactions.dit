@@ -31,19 +31,19 @@ dfd TransactionProcessing {
     }
 
     // Inbound boundary flows from parent
-    flow TransactionRequest: -> ValidateTransaction
-    flow HistoryQuery: -> RecordTransaction
+    flow BankingSystemLevel0.TransactionRequest: -> ValidateTransaction
+    flow BankingSystemLevel0.HistoryQueryFlow: -> RecordTransaction
 
     // Outbound boundary flows to parent
-    flow TransactionConfirmation: ExecuteTransaction ->
+    flow BankingSystemLevel0.TransactionConfirmation: ExecuteTransaction ->
 
     // Internal Flows
-    flow ValidationResult: ValidateTransaction -> ExecuteTransaction
-    flow ValidatedTransaction: ValidateTransaction -> TransactionQueue
-    flow QueuedTransaction: TransactionQueue -> ExecuteTransaction
-    flow TransactionResult: ExecuteTransaction -> RecordTransaction
-    flow BalanceUpdate: ExecuteTransaction -> NotifyCustomer
-    flow AuditRecord: RecordTransaction -> AuditLog
+    flow ValidationResultFlow(ValidationResult): ValidateTransaction -> ExecuteTransaction
+    flow ValidatedTransactionFlow(ValidatedTransaction): ValidateTransaction -> TransactionQueue
+    flow QueuedTransactionFlow(QueuedTransaction): TransactionQueue -> ExecuteTransaction
+    flow TransactionResultFlow(TransactionResult): ExecuteTransaction -> RecordTransaction
+    flow BalanceUpdateFlow(BalanceUpdate): ExecuteTransaction -> NotifyCustomer
+    flow AuditRecordFlow(AuditRecord): RecordTransaction -> AuditLog
 }
 
 // Transaction ERD

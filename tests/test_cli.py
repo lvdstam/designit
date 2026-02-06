@@ -86,15 +86,15 @@ class TestGenerateCommand:
     def test_default_output_directory(
         self, runner: CliRunner, sample_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test default output directory is ./diagrams (REQ-CLI-021)."""
+        """Test default output directory is ./generated/diagrams (REQ-CLI-021)."""
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(
             main,
             ["generate", str(sample_file), "-f", "mermaid"],
         )
         assert result.exit_code == 0
-        # Default diagram dir is now ./diagrams
-        generated_dir = tmp_path / "diagrams"
+        # Default diagram dir is ./generated/diagrams
+        generated_dir = tmp_path / "generated" / "diagrams"
         assert generated_dir.exists()
         assert len(list(generated_dir.glob("*.mmd"))) > 0
 
@@ -196,17 +196,21 @@ class TestGenerateValidation:
     def invalid_file(self, tmp_path: Path) -> Path:
         """Create a .dit file with validation errors."""
         content = """
+datadict {
+    Request = { data: string }
+}
+
 scd Context {
     system API {}
     external Client {}
-    flow Request: Client -> API
+    flow Request(Request): Client -> API
 }
 
 dfd Level0 {
     refines: Context.API
     process Handler {}
-    flow Request: -> Handler
-    flow UndefinedFlow: Handler ->
+    flow Context.Request: -> Handler
+    flow UndefinedFlow(UndefinedType): Handler ->
 }
 """
         file_path = tmp_path / "invalid.dit"
@@ -299,7 +303,7 @@ datadict {
 scd Context {
     system API { description: "Main API system" }
     external Client {}
-    flow Request: Client -> API
+    flow Request(Request): Client -> API
 }
 
 markdown {
@@ -325,7 +329,7 @@ datadict {
 scd Context {
     system API {}
     external Client {}
-    flow Request: Client -> API
+    flow Request(Request): Client -> API
 }
 """
         file_path = tmp_path / "without_markdown.dit"
@@ -368,7 +372,7 @@ scd Context {
                 "mermaid",
                 "--output-diagram-dir",
                 str(tmp_path / "diagrams"),
-                "--output-dir",
+                "--output-markdown",
                 str(md_path),
             ],
         )

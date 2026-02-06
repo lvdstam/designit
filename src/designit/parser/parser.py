@@ -25,9 +25,11 @@ from designit.parser.ast_nodes import (
     ERDNode,
     ExternalNode,
     FieldConstraintNode,
+    FlowDataTypeNode,
     FlowEndpointNode,
     FlowNode,
     FlowTypeRefNode,
+    FlowUnionNode,
     ImportNode,
     MarkdownNode,
     ModuleNode,
@@ -397,6 +399,29 @@ class DesignItTransformer(Transformer[Token, Any]):
         else:
             return FlowTypeRefNode(namespace=items[0], name=items[1])
 
+    def flow_data_type(self, items: list[Any]) -> list[FlowTypeRefNode]:
+        """Handle data type inside parentheses: Type1 | Type2 | ..."""
+        # items is a list of FlowTypeRefNode
+        return [item for item in items if isinstance(item, FlowTypeRefNode)]
+
+    def flow_data_type_clause(self, items: list[Any]) -> FlowDataTypeNode:
+        """Handle data type clause: (Type), (Type1 | Type2), or () for control flow."""
+        # items will be empty for () or contain a list of FlowTypeRefNodes
+        types: list[FlowTypeRefNode] = []
+        for item in items:
+            if isinstance(item, list):
+                types.extend(item)
+            elif isinstance(item, FlowTypeRefNode):
+                types.append(item)
+        return FlowDataTypeNode(types=types)
+
+    def flow_name(self, items: list[Any]) -> tuple[str, str | None]:
+        """Handle flow name: Name or Parent.Name -> (name, namespace)."""
+        if len(items) == 1:
+            return (items[0], None)  # Simple name
+        else:
+            return (items[1], items[0])  # (name, namespace) from Parent.Name
+
     def qualified_type_ref(self, items: list[Any]) -> DataDictTypeRefNode:
         """Handle qualified type reference in struct fields/unions/arrays: Namespace.TypeName."""
         return DataDictTypeRefNode(namespace=items[0], name=items[1])
@@ -492,14 +517,26 @@ class DesignItTransformer(Transformer[Token, Any]):
 
     @v_args(meta=True)
     def internal_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
-        """Handle internal flow: flow Name: Source -> Target."""
-        # items: [FLOW, FlowTypeRefNode, flow_endpoint, flow_endpoint, properties?]
-        type_ref = items[1]
-        source = items[2]
-        target = items[3]
-        properties = items[4] if len(items) > 4 else []
+        """Handle internal flow with explicit data type.
+
+        Grammar: FLOW flow_name flow_data_type_clause ":"
+                 flow_endpoint "->" flow_endpoint properties?
+        """
+        # items: [FLOW, (name, namespace), FlowDataTypeNode,
+        #         flow_endpoint, flow_endpoint, properties?]
+        name, namespace = items[1]
+        data_type = items[2]
+        source = items[3]
+        target = items[4]
+        properties = items[5] if len(items) > 5 else []
+
+        # Create type_ref for backward compatibility from primary type
+        type_ref = data_type.primary_type
+
         return FlowNode(
-            name=type_ref.name,
+            name=name,
+            namespace=namespace,
+            data_type=data_type,
             type_ref=type_ref,
             source=source,
             target=target,
@@ -508,14 +545,24 @@ class DesignItTransformer(Transformer[Token, Any]):
         )
 
     @v_args(meta=True)
-    def inbound_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
-        """Handle boundary inbound flow: flow Name: -> Target."""
-        # items: [FLOW, FlowTypeRefNode, flow_endpoint, properties?]
-        type_ref = items[1]
-        target = items[2]
-        properties = items[3] if len(items) > 3 else []
+    def inbound_flow_decl_typed(self, meta: Any, items: list[Any]) -> FlowNode:
+        """Handle boundary inbound flow with explicit data type.
+
+        Grammar: FLOW flow_name flow_data_type_clause ":" "->" flow_endpoint properties?
+        """
+        # items: [FLOW, (name, namespace), FlowDataTypeNode, flow_endpoint, properties?]
+        name, namespace = items[1]
+        data_type = items[2]
+        target = items[3]
+        properties = items[4] if len(items) > 4 else []
+
+        # Create type_ref for backward compatibility from primary type
+        type_ref = data_type.primary_type
+
         return FlowNode(
-            name=type_ref.name,
+            name=name,
+            namespace=namespace,
+            data_type=data_type,
             type_ref=type_ref,
             source=None,
             target=target,
@@ -524,15 +571,69 @@ class DesignItTransformer(Transformer[Token, Any]):
         )
 
     @v_args(meta=True)
-    def outbound_flow_decl(self, meta: Any, items: list[Any]) -> FlowNode:
-        """Handle boundary outbound flow: flow Name: Source ->."""
-        # items: [FLOW, FlowTypeRefNode, flow_endpoint, properties?]
-        type_ref = items[1]
+    def outbound_flow_decl_typed(self, meta: Any, items: list[Any]) -> FlowNode:
+        """Handle boundary outbound flow with explicit data type.
+
+        Grammar: FLOW flow_name flow_data_type_clause ":" flow_endpoint "->" properties?
+        """
+        # items: [FLOW, (name, namespace), FlowDataTypeNode, flow_endpoint, properties?]
+        name, namespace = items[1]
+        data_type = items[2]
+        source = items[3]
+        properties = items[4] if len(items) > 4 else []
+
+        # Create type_ref for backward compatibility from primary type
+        type_ref = data_type.primary_type
+
+        return FlowNode(
+            name=name,
+            namespace=namespace,
+            data_type=data_type,
+            type_ref=type_ref,
+            source=source,
+            target=None,
+            properties=properties,
+            location=_get_location(meta),
+        )
+
+    @v_args(meta=True)
+    def inbound_flow_decl_inherited(self, meta: Any, items: list[Any]) -> FlowNode:
+        """Handle boundary inbound flow inheriting data type from parent.
+
+        Grammar: FLOW flow_name ":" "->" flow_endpoint properties?
+        """
+        # items: [FLOW, (name, namespace), flow_endpoint, properties?]
+        name, namespace = items[1]
+        target = items[2]
+        properties = items[3] if len(items) > 3 else []
+
+        return FlowNode(
+            name=name,
+            namespace=namespace,
+            data_type=None,  # Inherited from parent
+            type_ref=None,
+            source=None,
+            target=target,
+            properties=properties,
+            location=_get_location(meta),
+        )
+
+    @v_args(meta=True)
+    def outbound_flow_decl_inherited(self, meta: Any, items: list[Any]) -> FlowNode:
+        """Handle boundary outbound flow inheriting data type from parent.
+
+        Grammar: FLOW flow_name ":" flow_endpoint "->" properties?
+        """
+        # items: [FLOW, (name, namespace), flow_endpoint, properties?]
+        name, namespace = items[1]
         source = items[2]
         properties = items[3] if len(items) > 3 else []
+
         return FlowNode(
-            name=type_ref.name,
-            type_ref=type_ref,
+            name=name,
+            namespace=namespace,
+            data_type=None,  # Inherited from parent
+            type_ref=None,
             source=source,
             target=None,
             properties=properties,
@@ -551,6 +652,7 @@ class DesignItTransformer(Transformer[Token, Any]):
         processes: list[ProcessNode] = []
         datastores: list[DatastoreNode] = []
         flows: list[FlowNode] = []
+        flow_unions: list[FlowUnionNode] = []
 
         for item in items[2:]:
             if isinstance(item, RefinesNode):
@@ -561,6 +663,8 @@ class DesignItTransformer(Transformer[Token, Any]):
                 datastores.append(item)
             elif isinstance(item, FlowNode):
                 flows.append(item)
+            elif isinstance(item, FlowUnionNode):
+                flow_unions.append(item)
 
         return DFDNode(
             name=name,
@@ -568,6 +672,7 @@ class DesignItTransformer(Transformer[Token, Any]):
             processes=processes,
             datastores=datastores,
             flows=flows,
+            flow_unions=flow_unions,
             location=_get_location(meta),
         )
 
@@ -612,12 +717,18 @@ class DesignItTransformer(Transformer[Token, Any]):
 
     @v_args(meta=True)
     def scd_flow_decl(self, meta: Any, items: list[Any]) -> SCDFlowNode:
-        # items: [FLOW, FlowTypeRefNode, source, arrow_direction, target, properties?]
-        type_ref = items[1]
-        source = items[2]
-        arrow = items[3]  # "outbound" or "bidirectional"
-        target = items[4]
-        properties = items[5] if len(items) > 5 else []
+        """Handle SCD flow: flow Name(DataType): Source -> Target.
+
+        Grammar: FLOW IDENTIFIER flow_data_type_clause ":"
+                 scd_flow_endpoint scd_flow_arrow scd_flow_endpoint properties?
+        """
+        # items: [FLOW, name, FlowDataTypeNode, source, arrow_direction, target, properties?]
+        name = items[1]
+        data_type = items[2]
+        source = items[3]
+        arrow = items[4]  # "outbound" or "bidirectional"
+        target = items[5]
+        properties = items[6] if len(items) > 6 else []
 
         # Determine direction based on arrow type
         # For "A -> B": direction is "outbound" (from source to target)
@@ -627,8 +738,12 @@ class DesignItTransformer(Transformer[Token, Any]):
             "bidirectional" if arrow == "bidirectional" else "outbound"
         )
 
+        # Create type_ref for backward compatibility from primary type
+        type_ref = data_type.primary_type
+
         return SCDFlowNode(
-            name=type_ref.name,
+            name=name,
+            data_type=data_type,
             type_ref=type_ref,
             source=source,
             target=target,
@@ -640,6 +755,26 @@ class DesignItTransformer(Transformer[Token, Any]):
     def scd_body(self, items: list[Any]) -> Any:
         return items[0] if items else None
 
+    def flow_union_members(self, items: list[Any]) -> list[str]:
+        """Handle flow union member list: Flow1 | Flow2 | ..."""
+        return [str(item) for item in items]
+
+    @v_args(meta=True)
+    def scd_flow_union_decl(self, meta: Any, items: list[Any]) -> FlowUnionNode:
+        """Handle SCD flow union: flow UnionName = Flow1 | Flow2."""
+        # items: [FLOW, IDENTIFIER (name), list[str] (members)]
+        name = items[1]
+        members = items[2] if len(items) > 2 else []
+        return FlowUnionNode(name=name, members=members, location=_get_location(meta))
+
+    @v_args(meta=True)
+    def dfd_flow_union_decl(self, meta: Any, items: list[Any]) -> FlowUnionNode:
+        """Handle DFD flow union: flow UnionName = Flow1 | Flow2."""
+        # items: [FLOW, IDENTIFIER (name), list[str] (members)]
+        name = items[1]
+        members = items[2] if len(items) > 2 else []
+        return FlowUnionNode(name=name, members=members, location=_get_location(meta))
+
     def scd_decl(self, items: list[Any]) -> SCDNode:
         # items: [SCD, IDENTIFIER, ...elements] - skip the keyword
         name = items[1]
@@ -647,6 +782,7 @@ class DesignItTransformer(Transformer[Token, Any]):
         externals: list[ExternalNode] = []
         datastores: list[DatastoreNode] = []
         flows: list[SCDFlowNode] = []
+        flow_unions: list[FlowUnionNode] = []
 
         for item in items[2:]:
             if isinstance(item, SystemNode):
@@ -657,6 +793,8 @@ class DesignItTransformer(Transformer[Token, Any]):
                 datastores.append(item)
             elif isinstance(item, SCDFlowNode):
                 flows.append(item)
+            elif isinstance(item, FlowUnionNode):
+                flow_unions.append(item)
 
         return SCDNode(
             name=name,
@@ -664,6 +802,7 @@ class DesignItTransformer(Transformer[Token, Any]):
             externals=externals,
             datastores=datastores,
             flows=flows,
+            flow_unions=flow_unions,
         )
 
     # ============================================

@@ -8,7 +8,7 @@ from typing import TextIO
 from designit.model.base import DesignDocument
 from designit.model.dfd import DataFlow, DFDModel
 from designit.model.erd import ERDModel
-from designit.model.scd import SCDModel
+from designit.model.scd import SCDFlow, SCDFlowUnion, SCDModel
 from designit.model.std import STDModel
 from designit.model.structure import StructureModel
 
@@ -16,13 +16,16 @@ from designit.model.structure import StructureModel
 class GraphVizGenerator:
     """Generates GraphViz DOT output for design diagrams."""
 
-    def __init__(self, include_placeholders: bool = True):
+    def __init__(self, include_placeholders: bool = True, expand_unions: bool = False):
         """Initialize the generator.
 
         Args:
             include_placeholders: If True, include placeholder elements with dashed borders.
+            expand_unions: If True, expand flow unions into individual member flows.
+                          If False (default), render unions as bundled single flows.
         """
         self.include_placeholders = include_placeholders
+        self.expand_unions = expand_unions
 
     def _escape(self, text: str) -> str:
         """Escape text for DOT labels."""
@@ -489,16 +492,68 @@ class GraphVizGenerator:
             out.write(f'  "{name}" [shape=cylinder label="{label}" {style}];\n')
 
     def _write_scd_flows(self, scd: SCDModel, out: TextIO) -> None:
-        """Write flow edges to DOT output."""
+        """Write flow edges to DOT output.
+
+        Handles both standalone flows and flow unions based on expand_unions setting:
+        - expand_unions=False (default): Render unions as single flows, skip members
+        - expand_unions=True: Render member flows from unions, skip the union itself
+        """
         out.write("\n  // Data Flows\n")
+
+        # Write standalone flows (not in any union)
         for name, flow in scd.flows.items():
-            label = self._escape(name)
-            src = flow.source.name
-            tgt = flow.target.name
-            if flow.direction == "bidirectional":
-                out.write(f'  "{src}" -> "{tgt}" [label=" {label} " dir=both];\n')
+            self._write_scd_single_flow(name, flow, out)
+
+        # Write flow unions
+        for union_name, union in scd.flow_unions.items():
+            if self.expand_unions:
+                # Expanded mode: render each member flow individually
+                for flow in union.members:
+                    # Add union annotation to label
+                    self._write_scd_single_flow(flow.name, flow, out, union_annotation=union_name)
             else:
-                out.write(f'  "{src}" -> "{tgt}" [label=" {label} "];\n')
+                # Bundled mode: render union as a single flow
+                self._write_scd_union_flow(union_name, union, out)
+
+    def _write_scd_single_flow(
+        self,
+        name: str,
+        flow: SCDFlow,
+        out: TextIO,
+        union_annotation: str | None = None,
+    ) -> None:
+        """Write a single SCD flow edge."""
+        if union_annotation:
+            label = self._escape(f"{name} [{union_annotation}]")
+        else:
+            label = self._escape(name)
+
+        src = flow.source.name
+        tgt = flow.target.name
+        if flow.direction == "bidirectional":
+            out.write(f'  "{src}" -> "{tgt}" [label=" {label} " dir=both];\n')
+        else:
+            out.write(f'  "{src}" -> "{tgt}" [label=" {label} "];\n')
+
+    def _write_scd_union_flow(self, union_name: str, union: SCDFlowUnion, out: TextIO) -> None:
+        """Write a flow union as a single bundled flow."""
+        if not union.members:
+            return
+
+        # Use the first member's endpoints for the union line
+        source = union.source
+        target = union.target
+        if not source or not target:
+            return
+
+        # Label shows union name with member count
+        member_count = len(union.members)
+        label = self._escape(f"{union_name} ({member_count} flows)")
+
+        if union.direction == "bidirectional":
+            out.write(f'  "{source.name}" -> "{target.name}" [label=" {label} " dir=both];\n')
+        else:
+            out.write(f'  "{source.name}" -> "{target.name}" [label=" {label} "];\n')
 
     # ============================================
     # Full Document Generation
@@ -535,15 +590,18 @@ class GraphVizGenerator:
         return result
 
 
-def generate_graphviz(doc: DesignDocument, include_placeholders: bool = True) -> dict[str, str]:
+def generate_graphviz(
+    doc: DesignDocument, include_placeholders: bool = True, expand_unions: bool = False
+) -> dict[str, str]:
     """Generate GraphViz DOT output for all diagrams in a document.
 
     Args:
         doc: The design document.
         include_placeholders: If True, include placeholder elements.
+        expand_unions: If True, expand flow unions into individual member flows.
 
     Returns:
         A dictionary mapping diagram names to DOT strings.
     """
-    generator = GraphVizGenerator(include_placeholders)
+    generator = GraphVizGenerator(include_placeholders, expand_unions)
     return generator.generate_all(doc)

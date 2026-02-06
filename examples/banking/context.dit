@@ -129,25 +129,25 @@ scd BankingSystemContext {
     }
 
     // Customer interactions (online/mobile banking)
-    flow LoginRequest: Customer -> BankingSystem
-    flow AccountInfo: BankingSystem -> Customer
-    flow TransactionRequest: Customer -> BankingSystem
-    flow TransactionConfirmation: BankingSystem -> Customer
+    flow LoginRequest(LoginRequest): Customer -> BankingSystem
+    flow AccountInfo(AccountInfo): BankingSystem -> Customer
+    flow TransactionRequest(TransactionRequest): Customer -> BankingSystem
+    flow TransactionConfirmation(TransactionConfirmation): BankingSystem -> Customer
 
     // Teller interactions (branch operations)
-    flow TellerQuery: BankTeller -> BankingSystem
-    flow CustomerData: BankingSystem -> BankTeller
+    flow TellerQuery(TellerQuery): BankTeller -> BankingSystem
+    flow CustomerData(CustomerData): BankingSystem -> BankTeller
 
     // External bank transfers (bidirectional)
-    flow TransferData: BankingSystem <-> ExternalBank
+    flow TransferData(TransferData): BankingSystem <-> ExternalBank
 
     // Regulatory compliance
-    flow ComplianceReport: BankingSystem -> RegulatoryAuthority
-    flow AuditRequest: RegulatoryAuthority -> BankingSystem
+    flow ComplianceReport(ComplianceReport): BankingSystem -> RegulatoryAuthority
+    flow AuditRequest(AuditRequest): RegulatoryAuthority -> BankingSystem
 
     // Data persistence
-    flow CustomerLookup: BankingSystem -> CustomerDB
-    flow CustomerUpdate: BankingSystem -> CustomerDB
-    flow TransactionRecord: BankingSystem -> TransactionLog
-    flow AuditQuery: BankingSystem -> TransactionLog
+    flow CustomerLookup(CustomerLookup): BankingSystem -> CustomerDB
+    flow CustomerUpdate(CustomerUpdate): BankingSystem -> CustomerDB
+    flow TransactionRecord(TransactionRecord): BankingSystem -> TransactionLog
+    flow AuditQuery(AuditQuery): BankingSystem -> TransactionLog
 }

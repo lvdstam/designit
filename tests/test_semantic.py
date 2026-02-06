@@ -17,7 +17,7 @@ class TestSemanticAnalysis:
         scd Context {
             system TestSystem {}
             external User { description: "Test user" }
-            flow Request: User -> TestSystem
+            flow Request(Request): User -> TestSystem
         }
         dfd TestDFD {
             refines: Context.TestSystem
@@ -83,7 +83,7 @@ class TestValidation:
         scd Context {
             system Valid {}
             external User { description: "User" }
-            flow Request: User -> Valid
+            flow Request(Request): User -> Valid
         }
         dfd ValidDFD {
             refines: Context.Valid
@@ -105,7 +105,7 @@ class TestValidation:
         scd Invalid {
             system Sys {}
             external User { description: "User" }
-            flow Request: User -> NonExistent
+            flow Request(Request): User -> NonExistent
         }
         """
         doc = analyze_string(source)
@@ -153,7 +153,7 @@ class TestValidation:
         scd Context {
             system Orphan {}
             external User { description: "User" }
-            flow Request: User -> Orphan
+            flow Request(Request): User -> Orphan
         }
         dfd OrphanDFD {
             refines: Context.Orphan
@@ -197,8 +197,8 @@ class TestSCDAnalysis:
             system MainSystem { description: "Main system" }
             external User { description: "User" }
             datastore DB { description: "Database" }
-            flow Request: User -> MainSystem
-            flow Data: MainSystem -> DB
+            flow Request(Request): User -> MainSystem
+            flow Data(Data): MainSystem -> DB
         }
         """
         doc = analyze_string(source)
@@ -220,7 +220,7 @@ class TestSCDAnalysis:
         scd FlowTest {
             system Core {}
             external Client {}
-            flow Input: Client -> Core
+            flow Input(Input): Client -> Core
         }
         """
         doc = analyze_string(source)
@@ -237,7 +237,7 @@ class TestSCDAnalysis:
         scd FlowTest {
             system Core {}
             external Client {}
-            flow Output: Core -> Client
+            flow Output(Output): Core -> Client
         }
         """
         doc = analyze_string(source)
@@ -254,7 +254,7 @@ class TestSCDAnalysis:
         scd FlowTest {
             system Core {}
             external Partner {}
-            flow Exchange: Core <-> Partner
+            flow Exchange(Exchange): Core <-> Partner
         }
         """
         doc = analyze_string(source)
@@ -275,7 +275,7 @@ class TestSCDValidation:
         scd Valid {
             system MainSystem {}
             external User {}
-            flow Request: User -> MainSystem
+            flow Request(Request): User -> MainSystem
         }
         """
         doc = analyze_string(source)
@@ -306,7 +306,7 @@ class TestSCDValidation:
         scd Invalid {
             system MainSystem {}
             external User {}
-            flow Request: User -> NonExistent
+            flow Request(Request): User -> NonExistent
         }
         """
         doc = analyze_string(source)
@@ -325,7 +325,7 @@ class TestSCDValidation:
             system MainSystem {}
             external User {}
             external Unused {}
-            flow Request: User -> MainSystem
+            flow Request(Request): User -> MainSystem
         }
         """
         doc = analyze_string(source)
@@ -343,7 +343,7 @@ class TestSCDValidation:
             system Core {}
             external A {}
             external B {}
-            flow Direct: A -> B
+            flow Direct(Direct): A -> B
         }
         """
         doc = analyze_string(source)
@@ -361,7 +361,7 @@ class TestFlowDataDictValidation:
         scd Context {
             system Sys {}
             external User {}
-            flow UndefinedFlow: User -> Sys
+            flow UndefinedFlow(UndefinedFlow): User -> Sys
         }
         dfd TestDFD {
             refines: Context.Sys
@@ -382,7 +382,7 @@ class TestFlowDataDictValidation:
         scd TestSCD {
             system Core {}
             external User {}
-            flow UndefinedFlow: User -> Core
+            flow UndefinedFlow(UndefinedFlow): User -> Core
         }
         """
         doc = analyze_string(source)
@@ -402,7 +402,7 @@ class TestFlowDataDictValidation:
         scd Context {
             system Sys {}
             external User {}
-            flow DefinedFlow: User -> Sys
+            flow DefinedFlow(DefinedFlow): User -> Sys
         }
         dfd TestDFD {
             refines: Context.Sys
@@ -424,7 +424,7 @@ class TestFlowDataDictValidation:
         scd TestSCD {
             system Core {}
             external User {}
-            flow DefinedFlow: User -> Core
+            flow DefinedFlow(DefinedFlow): User -> Core
         }
         """
         doc = analyze_string(source)
@@ -439,8 +439,8 @@ class TestFlowDataDictValidation:
             system Core {}
             external UserA {}
             external UserB {}
-            flow FlowA: UserA -> Core
-            flow FlowB: Core -> UserB
+            flow FlowA(FlowA): UserA -> Core
+            flow FlowB(FlowB): Core -> UserB
         }
         """
         doc = analyze_string(source)
@@ -461,8 +461,8 @@ class TestFlowDataDictValidation:
             system Core {}
             external UserA {}
             external UserB {}
-            flow DefinedFlow: UserA -> Core
-            flow UndefinedFlow: Core -> UserB
+            flow DefinedFlow(DefinedFlow): UserA -> Core
+            flow UndefinedFlow(UndefinedFlow): Core -> UserB
         }
         """
         doc = analyze_string(source)
@@ -481,12 +481,12 @@ class TestFlowDataDictValidation:
         scd Context {
             system Sys {}
             external User {}
-            flow SCDOnlyFlow: User -> Sys
+            flow SCDOnlyFlow(SCDOnlyFlow): User -> Sys
         }
         scd TestSCD {
             system Core {}
             external Client {}
-            flow SCDOnlyFlow2: Client -> Core
+            flow SCDOnlyFlow2(SCDOnlyFlow2): Client -> Core
         }
         """
         doc = analyze_string(source)
@@ -502,7 +502,7 @@ class TestFlowDataDictValidation:
         scd ContextDiagram {
             system MySystem {}
             external External {}
-            flow TestFlow: External -> MySystem
+            flow TestFlow(TestFlow): External -> MySystem
         }
         """
         doc = analyze_string(source)
@@ -524,7 +524,7 @@ class TestValidationMessageLineNumbers:
         source = """scd TestSCD {
     system Core {}
     external User {}
-    flow UndefinedFlow: User -> Core
+    flow UndefinedFlow(UndefinedFlow): User -> Core
 }
 """
         doc = analyze_string(source)
@@ -541,7 +541,7 @@ class TestValidationMessageLineNumbers:
         source = """scd Ctx {
     system Sys {}
     external User {}
-    flow UndefinedFlow: User -> Sys
+    flow UndefinedFlow(UndefinedFlow): User -> Sys
 }
 dfd TestDFD {
     refines: Ctx.Sys
@@ -565,8 +565,8 @@ dfd TestDFD {
     system Core {}
     external A {}
     external B {}
-    flow FlowA: A -> Core
-    flow FlowB: Core -> B
+    flow FlowA(FlowA): A -> Core
+    flow FlowB(FlowB): Core -> B
 }
 """
         doc = analyze_string(source)
@@ -584,7 +584,7 @@ dfd TestDFD {
         source = """scd TestSCD {
     system Core {}
     external User {}
-    flow UndefinedFlow: User -> Core
+    flow UndefinedFlow(UndefinedFlow): User -> Core
 }
 """
         doc = analyze_string(source, filename="test.dit")
@@ -681,7 +681,7 @@ class TestAllValidationMessageLineNumbers:
 scd Ctx {
     system Sys {}
     external User {}
-    flow Request: User -> Sys
+    flow Request(Request): User -> Sys
 }
 dfd TestDFD {
     refines: Ctx.Sys
@@ -710,7 +710,7 @@ scd TestSCD {
     system Core {}
     external User {}
     external Orphan {}
-    flow Request: User -> Core
+    flow Request(Request): User -> Core
 }
 """
         doc = analyze_string(source)
@@ -763,7 +763,7 @@ class TestDFDRefinementResolution:
         scd OrderContext {
             system OrderSystem {}
             external Customer {}
-            flow Request: Customer -> OrderSystem
+            flow Request(Request): Customer -> OrderSystem
         }
 
         dfd Level0 {
@@ -789,7 +789,7 @@ class TestDFDRefinementResolution:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
 
         dfd Level0 {
@@ -807,7 +807,7 @@ class TestDFDRefinementResolution:
             process DetailB {}
 
             flow Request: -> DetailA
-            flow Internal: DetailA -> DetailB
+            flow Internal(Internal): DetailA -> DetailB
         }
         """
         doc = analyze_string(source)
@@ -844,7 +844,7 @@ class TestDFDRefinementResolution:
         scd Context {
             system RealSystem {}
             external E {}
-            flow F: E -> RealSystem
+            flow F(F): E -> RealSystem
         }
 
         dfd Test {
@@ -870,7 +870,7 @@ class TestDFDRefinementResolution:
         scd Context {
             system Sys {}
             external Customer {}
-            flow F: Customer -> Sys
+            flow F(F): Customer -> Sys
         }
 
         dfd Test {
@@ -896,7 +896,7 @@ class TestDFDRefinementResolution:
         scd Context {
             system Sys {}
             datastore DB {}
-            flow F: Sys -> DB
+            flow F(F): Sys -> DB
         }
 
         dfd Test {
@@ -930,7 +930,7 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
 
         dfd Test {
@@ -956,8 +956,8 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
-            flow Response: Sys -> E
+            flow Request(Request): E -> Sys
+            flow Response(Response): Sys -> E
         }
 
         dfd Test {
@@ -984,7 +984,7 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
 
         dfd Test {
@@ -1012,7 +1012,7 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Response: Sys -> E
+            flow Response(Response): Sys -> E
         }
 
         dfd Test {
@@ -1039,8 +1039,8 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
-            flow Response: Sys -> E
+            flow Request(Request): E -> Sys
+            flow Response(Response): Sys -> E
         }
 
         dfd Test {
@@ -1050,9 +1050,9 @@ class TestDFDFlowCoverage:
             process Handler2 {}
 
             flow Request: -> Handler1
-            flow Response: Handler1 ->
+            flow Response(Response): Handler1 ->
             flow Response: Handler2 ->
-            flow Internal: Handler1 -> Handler2
+            flow Internal(Internal): Handler1 -> Handler2
         }
         """
         doc = analyze_string(source)
@@ -1070,8 +1070,8 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
-            flow Response: Sys -> E
+            flow Request(Request): E -> Sys
+            flow Response(Response): Sys -> E
         }
 
         dfd Test {
@@ -1097,7 +1097,7 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
 
         dfd Test {
@@ -1125,7 +1125,7 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
 
         dfd Test {
@@ -1135,7 +1135,7 @@ class TestDFDFlowCoverage:
             process B {}
 
             flow Request: -> A
-            flow InternalData: A -> B
+            flow InternalData(InternalData): A -> B
         }
         """
         doc = analyze_string(source)
@@ -1152,7 +1152,7 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Exchange: E <-> Sys
+            flow Exchange(Exchange): E <-> Sys
         }
 
         dfd Test {
@@ -1179,7 +1179,7 @@ class TestDFDFlowCoverage:
         scd Context {
             system Sys {}
             external E {}
-            flow Exchange: E <-> Sys
+            flow Exchange(Exchange): E <-> Sys
         }
 
         dfd Test {
@@ -1215,7 +1215,7 @@ class TestDFDDatastores:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
 
         dfd Test {
@@ -1225,7 +1225,7 @@ class TestDFDDatastores:
             datastore LocalCache {}
 
             flow Request: -> Handler
-            flow CacheData: Handler -> LocalCache
+            flow CacheData(CacheData): Handler -> LocalCache
         }
         """
         doc = analyze_string(source)
@@ -1244,8 +1244,8 @@ class TestDFDDatastores:
             system Sys {}
             external E {}
             datastore SharedDB {}
-            flow Request: E -> Sys
-            flow Data: Sys -> SharedDB
+            flow Request(Request): E -> Sys
+            flow Data(Data): Sys -> SharedDB
         }
 
         dfd Test {
@@ -1255,7 +1255,7 @@ class TestDFDDatastores:
             datastore SharedDB {}
 
             flow Request: -> Handler
-            flow Data: Handler -> SharedDB
+            flow Data(Data): Handler -> SharedDB
         }
         """
         doc = analyze_string(source)
@@ -1274,7 +1274,7 @@ class TestDFDDatastores:
         scd Context {
             system Sys {}
             external Customer {}
-            flow Request: Customer -> Sys
+            flow Request(Request): Customer -> Sys
         }
 
         dfd Test {
@@ -1284,7 +1284,7 @@ class TestDFDDatastores:
             datastore Customer {}
 
             flow Request: -> Handler
-            flow Data: Handler -> Customer
+            flow Data(Data): Handler -> Customer
         }
         """
         doc = analyze_string(source)
@@ -1304,8 +1304,8 @@ class TestDFDDatastores:
             system Sys {}
             external E {}
             datastore MainDB {}
-            flow Request: E -> Sys
-            flow SaveData: Sys -> MainDB
+            flow Request(Request): E -> Sys
+            flow SaveData(SaveData): Sys -> MainDB
         }
 
         dfd Test {
@@ -1328,12 +1328,12 @@ class TestDFDDatastores:
         datadict {
             Request = { data: string }
             CacheData = { data: string }
-            Internal = { data: string }
+            InternalData = { data: string }
         }
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
 
         dfd Level0 {
@@ -1342,8 +1342,8 @@ class TestDFDDatastores:
             process Handler {}
             datastore ParentCache {}
 
-            flow Request: -> Handler
-            flow CacheData: Handler -> ParentCache
+            flow Context.Request: -> Handler
+            flow CacheData(CacheData): Handler -> ParentCache
         }
 
         dfd Level1 {
@@ -1352,9 +1352,9 @@ class TestDFDDatastores:
             process SubA {}
             process SubB {}
 
-            flow Request: -> SubA
-            flow CacheData: SubB ->
-            flow Internal: SubA -> SubB
+            flow Level0.Request: -> SubA
+            flow Level0.CacheData: SubB ->
+            flow InternalFlow(InternalData): SubA -> SubB
         }
         """
         doc = analyze_string(source)
@@ -1375,13 +1375,13 @@ class TestNoDuplicateNames:
         scd Context1 {
             system CoreSystem {}
             external Client1 {}
-            flow F1: Client1 -> CoreSystem
+            flow F1(F1): Client1 -> CoreSystem
         }
 
         scd Context2 {
             system CoreSystem {}
             external Client2 {}
-            flow F2: Client2 -> CoreSystem
+            flow F2(F2): Client2 -> CoreSystem
         }
         """
         doc = analyze_string(source)
@@ -1397,13 +1397,13 @@ class TestNoDuplicateNames:
         scd Context1 {
             system Sys1 {}
             external Customer {}
-            flow F1: Customer -> Sys1
+            flow F1(F1): Customer -> Sys1
         }
 
         scd Context2 {
             system Sys2 {}
             external Customer {}
-            flow F2: Customer -> Sys2
+            flow F2(F2): Customer -> Sys2
         }
         """
         doc = analyze_string(source)
@@ -1423,12 +1423,12 @@ class TestNoDuplicateNames:
         scd Context1 {
             system Sys1 {}
             external Client1 {}
-            flow Request: Client1 -> Sys1
+            flow Request(Request): Client1 -> Sys1
         }
         scd Context2 {
             system Sys2 {}
             external Client2 {}
-            flow Response: Client2 -> Sys2
+            flow Response(Response): Client2 -> Sys2
         }
 
         dfd DFD1 {
@@ -1456,13 +1456,13 @@ class TestNoDuplicateNames:
         scd Context1 {
             system Sys1 {}
             datastore SharedDB {}
-            flow F1: Sys1 -> SharedDB
+            flow F1(F1): Sys1 -> SharedDB
         }
 
         scd Context2 {
             system Sys2 {}
             datastore SharedDB {}
-            flow F2: Sys2 -> SharedDB
+            flow F2(F2): Sys2 -> SharedDB
         }
         """
         doc = analyze_string(source)
@@ -1507,7 +1507,7 @@ dfd Test {
 scd Context {
     system Sys {}
     external E {}
-    flow Request: E -> Sys
+    flow Request(Request): E -> Sys
 }
 
 dfd Test {
@@ -1540,7 +1540,7 @@ class TestDFDFlowCompoundKeys:
         scd Context {
             system Sys {}
             external RemoteAPI {}
-            flow DataExchange: RemoteAPI <-> Sys
+            flow DataExchange(DataExchange): RemoteAPI <-> Sys
         }
         dfd Test {
             refines: Context.Sys
@@ -1575,14 +1575,14 @@ class TestDFDFlowCompoundKeys:
         scd Context {
             system Sys {}
             external E {}
-            flow Data: E -> Sys
+            flow Data(Data): E -> Sys
         }
         dfd Test {
             refines: Context.Sys
             process A {}
             process B {}
             flow Data: -> A
-            flow InternalFlow: A -> B
+            flow InternalFlow(InternalFlow): A -> B
         }
         """
         doc = analyze_string(source)
@@ -1606,7 +1606,7 @@ class TestDFDFlowCompoundKeys:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
         dfd Test {
             refines: Context.Sys
@@ -1640,7 +1640,7 @@ class TestDFDFlowHelperMethods:
         scd Context {
             system Sys {}
             external RemoteAPI {}
-            flow DataExchange: RemoteAPI <-> Sys
+            flow DataExchange(DataExchange): RemoteAPI <-> Sys
         }
         dfd Test {
             refines: Context.Sys
@@ -1669,7 +1669,7 @@ class TestDFDFlowHelperMethods:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
         dfd Test {
             refines: Context.Sys
@@ -1695,7 +1695,7 @@ class TestDFDFlowHelperMethods:
         scd Context {
             system Sys {}
             external RemoteAPI {}
-            flow DataExchange: RemoteAPI <-> Sys
+            flow DataExchange(DataExchange): RemoteAPI <-> Sys
         }
         dfd Test {
             refines: Context.Sys
@@ -1721,7 +1721,7 @@ class TestDFDFlowHelperMethods:
         scd Context {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(Request): E -> Sys
         }
         dfd Test {
             refines: Context.Sys
@@ -1746,7 +1746,7 @@ class TestNamespacedDataDict:
     """
 
     def test_qualified_namespaced_type_valid(self) -> None:
-        """Using qualified namespaced type in flow should be valid."""
+        """Using qualified namespaced type in flow data type clause should be valid."""
         source = """
         datadict PaymentGateway {
             PaymentRequest = { amount: decimal }
@@ -1755,7 +1755,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external PayGw {}
-            flow PaymentGateway.PaymentRequest: Sys -> PayGw
+            flow PayRequest(PaymentGateway.PaymentRequest): Sys -> PayGw
         }
         """
         doc = analyze_string(source)
@@ -1773,7 +1773,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external PayGw {}
-            flow PaymentRequest: Sys -> PayGw
+            flow PaymentRequest(PaymentRequest): Sys -> PayGw
         }
         """
         doc = analyze_string(source)
@@ -1797,7 +1797,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external E {}
-            flow SimpleRequest: E -> Sys
+            flow SimpleRequest(SimpleRequest): E -> Sys
         }
         """
         doc = analyze_string(source)
@@ -1819,8 +1819,8 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external PayGw {}
-            flow PaymentGateway.Request1: Sys -> PayGw
-            flow PaymentGateway.Request2: PayGw -> Sys
+            flow FlowReq1(PaymentGateway.Request1): Sys -> PayGw
+            flow FlowReq2(PaymentGateway.Request2): PayGw -> Sys
         }
         """
         doc = analyze_string(source)
@@ -1906,7 +1906,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external Svc {}
-            flow ServiceA.TypeA: Sys -> Svc
+            flow TypeAFlow(ServiceA.TypeA): Sys -> Svc
         }
         """
         doc = analyze_string(source)
@@ -1931,7 +1931,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external PayGw {}
-            flow PaymentGateway.PaymentRequest: Sys -> PayGw
+            flow PayFlow(PaymentGateway.PaymentRequest): Sys -> PayGw
         }
         """
         doc = analyze_string(source)
@@ -1949,7 +1949,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external PayGw {}
-            flow PaymentGateway.PaymentRequest: PayGw -> Sys
+            flow PayFlow(PaymentGateway.PaymentRequest): PayGw -> Sys
         }
 
         dfd Level0 {
@@ -1957,7 +1957,7 @@ class TestNamespacedDataDict:
 
             process Handler {}
 
-            flow PaymentGateway.PaymentRequest: -> Handler
+            flow Context.PayFlow: -> Handler
         }
         """
         doc = analyze_string(source)
@@ -1966,7 +1966,7 @@ class TestNamespacedDataDict:
         assert len(errors) == 0, f"Expected no errors, got: {[e.message for e in errors]}"
 
     def test_dfd_unqualified_namespaced_type_error(self) -> None:
-        """DFD flows with unqualified namespaced types should error."""
+        """DFD boundary flows must reference parent flow, not use arbitrary names."""
         source = """
         datadict PaymentGateway {
             PaymentRequest = { amount: decimal }
@@ -1975,7 +1975,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external PayGw {}
-            flow PaymentGateway.PaymentRequest: PayGw -> Sys
+            flow PayFlow(PaymentGateway.PaymentRequest): PayGw -> Sys
         }
 
         dfd Level0 {
@@ -1990,6 +1990,7 @@ class TestNamespacedDataDict:
         messages = validate(doc)
         errors = [m for m in messages if m.severity == ValidationSeverity.ERROR]
         assert len(errors) >= 1
+        # Should error - PaymentRequest is not a valid parent flow reference
         assert any("PaymentRequest" in e.message for e in errors)
 
     def test_datadict_model_qualified_name_property(self) -> None:
@@ -2124,7 +2125,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external PayGw {}
-            flow Payment.Request: Sys -> PayGw
+            flow PayFlow(Payment.Request): Sys -> PayGw
         }
         """
         doc = analyze_string(source)
@@ -2149,7 +2150,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external Svc {}
-            flow ServiceA.Request: Sys -> Svc
+            flow ReqFlow(ServiceA.Request): Sys -> Svc
         }
         """
         doc = analyze_string(source)
@@ -2199,7 +2200,7 @@ class TestNamespacedDataDict:
         scd Context {
             system Sys {}
             external Svc {}
-            flow ServiceA.TypeB: Sys -> Svc
+            flow TypeBFlow(ServiceA.TypeB): Sys -> Svc
         }
         """
         doc = analyze_string(source)
@@ -2232,7 +2233,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Customer {}
-            flow Customer: Customer -> Sys
+            flow Customer(Customer): Customer -> Sys
         }
         """
         doc = analyze_string(source)
@@ -2250,7 +2251,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             datastore Database {}
-            flow Database: Sys -> Database
+            flow Database(Database): Sys -> Database
         }
         """
         doc = analyze_string(source)
@@ -2268,7 +2269,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system MainSystem {}
             external Client {}
-            flow Request: Client -> MainSystem
+            flow Request(Request): Client -> MainSystem
         }
         """
         doc = analyze_string(source)
@@ -2287,7 +2288,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Client {}
-            flow Request: Client -> Sys
+            flow Request(Request): Client -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
@@ -2311,7 +2312,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Client {}
-            flow Request: Client -> Sys
+            flow Request(Request): Client -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
@@ -2340,7 +2341,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Client {}
-            flow Request: Client -> Sys
+            flow Request(Request): Client -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
@@ -2369,7 +2370,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Client {}
-            flow Request: Client -> Sys
+            flow Request(Request): Client -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
@@ -2398,7 +2399,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system MainSystem {}
             external Client {}
-            flow Request: Client -> MainSystem
+            flow Request(Request): Client -> MainSystem
         }
         """
         doc = analyze_string(source)
@@ -2419,7 +2420,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Client {}
-            flow Request: Client -> Sys
+            flow Request(Request): Client -> Sys
         }
         """
         doc = analyze_string(source)
@@ -2440,7 +2441,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             datastore Storage {}
-            flow Data: Sys -> Storage
+            flow Data(Data): Sys -> Storage
         }
         """
         doc = analyze_string(source)
@@ -2466,7 +2467,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Client {}
-            flow Request: Client -> Sys
+            flow Request(Request): Client -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
@@ -2492,7 +2493,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Customer {}
-            flow ServiceA.Customer: Customer -> Sys
+            flow CustFlow(ServiceA.Customer): Customer -> Sys
         }
         """
         doc = analyze_string(source)
@@ -2516,7 +2517,7 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Client {}
-            flow Req: Client -> Sys
+            flow Req(Req): Client -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
@@ -2544,8 +2545,8 @@ class TestDataDictNameConflicts:
         scd Context {
             system Sys {}
             external Customer {}
-            flow Customer.Request: Customer -> Sys
-            flow Customer.Response: Sys -> Customer
+            flow CustReq(Customer.Request): Customer -> Sys
+            flow CustResp(Customer.Response): Sys -> Customer
         }
         """
         doc = analyze_string(source)
@@ -2701,7 +2702,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system PaymentSystem {}
             external Customer {}
-            flow PaymentMethod: Customer -> PaymentSystem
+            flow PaymentMethod(PaymentMethod): Customer -> PaymentSystem
         }
         dfd DirectUse {
             refines: Context.PaymentSystem
@@ -2731,7 +2732,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system PaymentSystem {}
             external Customer {}
-            flow PaymentMethod: Customer -> PaymentSystem
+            flow PaymentMethod(PaymentMethod): Customer -> PaymentSystem
         }
         dfd Decomposed {
             refines: Context.PaymentSystem
@@ -2763,7 +2764,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system PaymentSystem {}
             external Customer {}
-            flow PaymentMethod: Customer -> PaymentSystem
+            flow PaymentMethod(PaymentMethod): Customer -> PaymentSystem
         }
         dfd Incomplete {
             refines: Context.PaymentSystem
@@ -2792,7 +2793,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system PaymentSystem {}
             external Customer {}
-            flow PaymentMethod: Customer -> PaymentSystem
+            flow PaymentMethod(PaymentMethod): Customer -> PaymentSystem
         }
         dfd MixedInvalid {
             refines: Context.PaymentSystem
@@ -2822,7 +2823,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system PaymentSystem {}
             external Customer {}
-            flow PaymentMethod: Customer -> PaymentSystem
+            flow PaymentMethod(PaymentMethod): Customer -> PaymentSystem
         }
         dfd Level1 {
             refines: Context.PaymentSystem
@@ -2855,7 +2856,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system PaymentSystem {}
             external Customer {}
-            flow PaymentMethod: Customer -> PaymentSystem
+            flow PaymentMethod(PaymentMethod): Customer -> PaymentSystem
         }
         dfd LeafLevel {
             refines: Context.PaymentSystem
@@ -2890,7 +2891,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system PaymentSystem {}
             external Customer {}
-            flow PaymentMethod: Customer -> PaymentSystem
+            flow PaymentMethod(PaymentMethod): Customer -> PaymentSystem
         }
         dfd MixedLevels {
             refines: Context.PaymentSystem
@@ -2920,7 +2921,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system PaymentSystem {}
             external Customer {}
-            flow PaymentMethod: Customer -> PaymentSystem
+            flow PaymentMethod(PaymentMethod): Customer -> PaymentSystem
         }
         dfd MultipleHandlers {
             refines: Context.PaymentSystem
@@ -2948,7 +2949,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system MySystem {}
             external User {}
-            flow Request: User -> MySystem
+            flow Request(Request): User -> MySystem
         }
         dfd Normal {
             refines: Context.MySystem
@@ -2973,7 +2974,7 @@ class TestFlowTypeDecomposition:
         scd Context {
             system MySystem {}
             external User {}
-            flow Status: User -> MySystem
+            flow Status(Status): User -> MySystem
         }
         dfd Normal {
             refines: Context.MySystem

@@ -17,14 +17,13 @@ class TestMermaidDFDBidirectionalDetection:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
-            flow Data: Sys -> User
+            flow DataExchange(Data): User <-> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler {}
-            flow Data: -> Handler
-            flow Data: Handler ->
+            flow Context.DataExchange: -> Handler
+            flow Context.DataExchange: Handler ->
         }
         """
         doc = analyze_string(source)
@@ -33,8 +32,8 @@ class TestMermaidDFDBidirectionalDetection:
         generator = MermaidGenerator()
         bidirectional = generator._detect_dfd_bidirectional_flows(dfd)
 
-        assert "Data" in bidirectional
-        assert bidirectional["Data"] == "Handler"
+        assert "DataExchange" in bidirectional
+        assert bidirectional["DataExchange"] == "Handler"
 
     def test_empty_when_different_processes(self) -> None:
         """Bidirectional detection returns empty when in/out use different processes."""
@@ -46,15 +45,15 @@ class TestMermaidDFDBidirectionalDetection:
         scd Context {
             system Sys {}
             external User {}
-            flow Request: User -> Sys
-            flow Response: Sys -> User
+            flow Req(Request): User -> Sys
+            flow Resp(Response): Sys -> User
         }
         dfd Level0 {
             refines: Context.Sys
             process Receiver {}
             process Sender {}
-            flow Request: -> Receiver
-            flow Response: Sender ->
+            flow Context.Req: -> Receiver
+            flow Context.Resp: Sender ->
         }
         """
         doc = analyze_string(source)
@@ -74,14 +73,14 @@ class TestMermaidDFDBidirectionalDetection:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process A {}
             process B {}
-            flow Data: -> A
-            flow Data: A -> B
+            flow Context.DataFlow: -> A
+            flow Internal(Data): A -> B
         }
         """
         doc = analyze_string(source)
@@ -105,14 +104,14 @@ class TestMermaidDFDPlaceholderCollection:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler {}
             process PlaceholderProc { ... }
             datastore PlaceholderStore { ... }
-            flow Data: -> Handler
+            flow Context.DataFlow: -> Handler
         }
         """
         doc = analyze_string(source)
@@ -134,12 +133,12 @@ class TestMermaidDFDPlaceholderCollection:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler {}
-            flow Data: -> Handler
+            flow Context.DataFlow: -> Handler
         }
         """
         doc = analyze_string(source)
@@ -163,14 +162,13 @@ class TestGraphVizDFDBidirectionalDetection:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
-            flow Data: Sys -> User
+            flow DataExchange(Data): User <-> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler {}
-            flow Data: -> Handler
-            flow Data: Handler ->
+            flow Context.DataExchange: -> Handler
+            flow Context.DataExchange: Handler ->
         }
         """
         doc = analyze_string(source)
@@ -179,8 +177,8 @@ class TestGraphVizDFDBidirectionalDetection:
         generator = GraphVizGenerator()
         bidirectional = generator._detect_dfd_bidirectional_flows(dfd)
 
-        assert "Data" in bidirectional
-        assert bidirectional["Data"] == "Handler"
+        assert "DataExchange" in bidirectional
+        assert bidirectional["DataExchange"] == "Handler"
 
     def test_empty_when_different_processes(self) -> None:
         """Bidirectional detection returns empty when in/out use different processes."""
@@ -192,15 +190,15 @@ class TestGraphVizDFDBidirectionalDetection:
         scd Context {
             system Sys {}
             external User {}
-            flow Request: User -> Sys
-            flow Response: Sys -> User
+            flow Req(Request): User -> Sys
+            flow Resp(Response): Sys -> User
         }
         dfd Level0 {
             refines: Context.Sys
             process Receiver {}
             process Sender {}
-            flow Request: -> Receiver
-            flow Response: Sender ->
+            flow Context.Req: -> Receiver
+            flow Context.Resp: Sender ->
         }
         """
         doc = analyze_string(source)
@@ -220,14 +218,14 @@ class TestGraphVizDFDBidirectionalDetection:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process A {}
             process B {}
-            flow Data: -> A
-            flow Data: A -> B
+            flow Context.DataFlow: -> A
+            flow Internal(Data): A -> B
         }
         """
         doc = analyze_string(source)
@@ -251,12 +249,12 @@ class TestGraphVizDFDBoundaryNodes:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler {}
-            flow Data: -> Handler
+            flow Context.DataFlow: -> Handler
         }
         """
         doc = analyze_string(source)
@@ -267,7 +265,7 @@ class TestGraphVizDFDBoundaryNodes:
 
         # Boundary node should be invisible
         assert "style=invis" in output
-        assert "_boundary_Data" in output
+        assert "_boundary_DataFlow" in output
 
 
 class TestGraphVizSCDElementStyling:
@@ -276,10 +274,13 @@ class TestGraphVizSCDElementStyling:
     def test_scd_external_without_description(self) -> None:
         """SCD externals should not include description in label."""
         source = """
+        datadict {
+            Request = { value: string }
+        }
         scd Context {
             system API {}
             external Client { description: "The client application" }
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = analyze_string(source)
@@ -295,10 +296,13 @@ class TestGraphVizSCDElementStyling:
     def test_scd_datastore_without_description(self) -> None:
         """SCD datastores should not include description in label."""
         source = """
+        datadict {
+            Data = { value: string }
+        }
         scd Context {
             system API {}
             datastore DB { description: "The database" }
-            flow Data: API -> DB
+            flow DataFlow(Data): API -> DB
         }
         """
         doc = analyze_string(source)
@@ -314,10 +318,13 @@ class TestGraphVizSCDElementStyling:
     def test_scd_system_without_description(self) -> None:
         """SCD system should not include description in label (REQ-GEN-062)."""
         source = """
+        datadict {
+            Request = { value: string }
+        }
         scd Context {
             system API { description: "The API system" }
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = analyze_string(source)
@@ -337,10 +344,13 @@ class TestMermaidSCDElementStyling:
     def test_scd_system_without_description(self) -> None:
         """SCD system should not include description in label (REQ-GEN-062)."""
         source = """
+        datadict {
+            Request = { value: string }
+        }
         scd Context {
             system API { description: "The API system" }
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = analyze_string(source)
@@ -364,12 +374,12 @@ class TestMermaidDFDProcessStyling:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler {}
-            flow Data: -> Handler
+            flow Context.DataFlow: -> Handler
         }
         """
         doc = analyze_string(source)
@@ -386,12 +396,12 @@ class TestMermaidDFDProcessStyling:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler { description: "Handles incoming data" }
-            flow Data: -> Handler
+            flow Context.DataFlow: -> Handler
         }
         """
         doc = analyze_string(source)
@@ -412,12 +422,12 @@ class TestGraphVizDFDProcessStyling:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler {}
-            flow Data: -> Handler
+            flow Context.DataFlow: -> Handler
         }
         """
         doc = analyze_string(source)
@@ -434,12 +444,12 @@ class TestGraphVizDFDProcessStyling:
         scd Context {
             system Sys {}
             external User {}
-            flow Data: User -> Sys
+            flow DataFlow(Data): User -> Sys
         }
         dfd Level0 {
             refines: Context.Sys
             process Handler { description: "Handles incoming data" }
-            flow Data: -> Handler
+            flow Context.DataFlow: -> Handler
         }
         """
         doc = analyze_string(source)

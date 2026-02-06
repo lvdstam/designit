@@ -63,9 +63,14 @@ The DSL shall support System Context Diagram definitions using the `scd` keyword
 - Support for external entities: `external Name { ... }`
 - Support for data stores: `datastore Name { ... }`
 - Support for directional data flows with arrow notation:
-  - Inbound: `flow Name: External -> System`
-  - Outbound: `flow Name: System -> External`
-  - Bidirectional: `flow Name: External <-> System`
+  - Inbound: `flow FlowName(DataType): External -> System`
+  - Outbound: `flow FlowName(DataType): System -> External`
+  - Bidirectional: `flow FlowName(DataType): External <-> System`
+  - Control flow (no data): `flow FlowName(): External -> System`
+- Flow syntax requires parentheses with optional data type:
+  - `flow Name(Type)` - carries data of specified type
+  - `flow Name(Type1 | Type2)` - carries union of data types
+  - `flow Name()` - control flow, carries no data
 - Elements support property blocks with key-value pairs
 
 **Example:**
@@ -77,10 +82,11 @@ scd OrderProcessing {
     external PaymentGateway { description: "Handles payments" }
     datastore OrderDB { description: "Order storage" }
     
-    flow OrderRequest: Customer -> OrderSystem
-    flow Confirmation: OrderSystem -> Customer
-    flow PaymentData: OrderSystem <-> PaymentGateway
-    flow OrderData: OrderSystem -> OrderDB
+    flow PlaceOrder(OrderRequest): Customer -> OrderSystem
+    flow SendConfirmation(Confirmation): OrderSystem -> Customer
+    flow ProcessPayment(PaymentData): OrderSystem <-> PaymentGateway
+    flow StoreOrder(OrderData): OrderSystem -> OrderDB
+    flow Heartbeat(): PaymentGateway -> OrderSystem  // control flow
 }
 ```
 
@@ -96,27 +102,42 @@ The DSL shall support Data Flow Diagram definitions using the `dfd` keyword.
 
 **Acceptance Criteria:**
 - DFD declared with `dfd Name { ... }`
-- Support for external entities: `external Name { ... }`
+- Every DFD must declare what it refines: `refines: DiagramName.ElementName`
 - Support for processes: `process Name { ... }`
-- Support for data stores: `datastore Name { ... }`
-- Support for data flows: `flow Name: Source -> Target`
+- Support for local data stores: `datastore Name { ... }`
+- Support for data flows:
+  - Internal flows: `flow FlowName(DataType): Source -> Target`
+  - Boundary inbound: `flow Parent.FlowName: -> Target` (inherited data type)
+  - Boundary outbound: `flow Parent.FlowName: Source ->` (inherited data type)
+- Boundary flows use qualified names (`Parent.FlowName`) to reference parent flows
+- Boundary flows inherit their data type from the parent flow (parentheses optional)
+- Internal flows require parentheses with data type specification
 - Flow endpoints can specify ports: `Entity.port`
 - Elements support property blocks with key-value pairs
+- DFDs do NOT contain external entities (externals exist only at SCD level)
 
 **Example:**
 ```
-dfd OrderSystem {
-    external Customer { description: "Places orders" }
+dfd OrderProcessing {
+    refines: OrderContext.OrderSystem
+    
     process ValidateOrder { description: "Validates order data" }
-    datastore OrderDB { description: "Order records" }
-    flow OrderData: Customer -> ValidateOrder
-    flow SaveOrder: ValidateOrder -> OrderDB
+    process ProcessPayment { description: "Handles payment" }
+    datastore OrderCache { description: "Temporary order storage" }
+    
+    // Boundary flows - inherit data type from parent
+    flow OrderContext.PlaceOrder: -> ValidateOrder
+    flow OrderContext.SendConfirmation: ProcessPayment ->
+    
+    // Internal flows - require explicit data type
+    flow ValidatedOrder(OrderData): ValidateOrder -> ProcessPayment
+    flow CacheOrder(OrderData): ValidateOrder -> OrderCache
 }
 ```
 
 **Implementation:** 
-- Grammar: `src/designit/grammar/designit.lark` (dfd_def, external_def, process_def, datastore_def, flow_def)
-- AST: `src/designit/parser/ast_nodes.py` (DFDNode, ExternalNode, ProcessNode, DatastoreNode, FlowNode)
+- Grammar: `src/designit/grammar/designit.lark` (dfd_def, process_def, datastore_def, flow_def)
+- AST: `src/designit/parser/ast_nodes.py` (DFDNode, ProcessNode, DatastoreNode, FlowNode)
 - Model: `src/designit/model/dfd.py`
 
 ---
@@ -326,32 +347,61 @@ datadict PaymentGateway {
 
 ---
 
-#### REQ-GRAM-052: Qualified Type References in Flows [DONE]
-Flow declarations shall support qualified type references using dot notation.
+#### REQ-GRAM-052: Flow Data Type Syntax [DONE]
+Flow declarations shall separate flow names from data types using parentheses.
 
 **Acceptance Criteria:**
-- Unqualified syntax (existing): `flow TypeName: Source -> Target`
-- Qualified syntax (new): `flow Namespace.TypeName: Source -> Target`
-- Applies to SCD flows and DFD flows (all variants: internal, inbound, outbound)
+- Flow name is always a simple identifier or qualified name (`Parent.FlowName`)
+- Data type is specified in parentheses after the flow name
+- SCD flows require parentheses (data type clause required, content optional):
+  - `flow FlowName(DataType): Source -> Target` - carries data
+  - `flow FlowName(Type1 | Type2): Source -> Target` - carries union of types
+  - `flow FlowName(): Source -> Target` - control flow, no data
+- DFD internal flows require parentheses with data type
+- DFD boundary flows use qualified names to reference parent flows:
+  - `flow Parent.FlowName: -> Target` - inherits data type from parent
+  - `flow Parent.FlowName(DataType): -> Target` - explicit (must match parent exactly)
+- Data types can reference namespaced types: `flow F(Namespace.Type): A -> B`
 
 **Example:**
 ```
+datadict PaymentGateway {
+    GetStatusRequest = { transaction_id: string }
+    GetStatusResponse = { status: string, amount: decimal }
+}
+
 scd BankingContext {
-    system BankingSystem { ... }
-    external PaymentGw { ... }
+    system BankingSystem { description: "Core banking" }
+    external PaymentGw { description: "External payment provider" }
     
-    // Unqualified - references anonymous datadict type
-    flow Money: BankingSystem -> SomeProcess
+    // Flow with namespaced data type
+    flow CheckStatus(PaymentGateway.GetStatusRequest): BankingSystem -> PaymentGw
+    flow StatusResult(PaymentGateway.GetStatusResponse): PaymentGw -> BankingSystem
     
-    // Qualified - references namespaced type
-    flow PaymentGateway.GetStatusRequest: BankingSystem -> PaymentGw
-    flow PaymentGateway.GetStatusResponse: PaymentGw -> BankingSystem
+    // Flow with union data type
+    flow PaymentFlow(CreditCard | BankTransfer): Customer -> BankingSystem
+    
+    // Control flow (no data)
+    flow Ping(): BankingSystem -> PaymentGw
+}
+
+dfd PaymentProcessing {
+    refines: BankingContext.BankingSystem
+    
+    process HandlePayment {}
+    process RoutePayment {}
+    
+    // Boundary flow - inherits data type from parent
+    flow BankingContext.CheckStatus: -> HandlePayment
+    
+    // Internal flow - requires explicit data type
+    flow RouteInfo(RoutingData): HandlePayment -> RoutePayment
 }
 ```
 
 **Implementation:**
-- Grammar: `src/designit/grammar/designit.lark` (flow_type_ref rule)
-- AST: `src/designit/parser/ast_nodes.py` (FlowTypeRef model)
+- Grammar: `src/designit/grammar/designit.lark` (flow_data_type_clause, flow_data_type rules)
+- AST: `src/designit/parser/ast_nodes.py` (FlowDataTypeNode, FlowTypeRefNode)
 - Parser: `src/designit/parser/parser.py` (flow declaration transformers)
 
 ---
@@ -640,38 +690,83 @@ Note: Type union validation is covered by REQ-SEM-069.
 
 ---
 
-#### REQ-SEM-061: SCD Flow Data Dictionary Validation [DONE]
-SCD flow names shall be validated against the data dictionary.
+#### REQ-SEM-061: SCD Flow Data Type Validation [DONE]
+SCD flow data types shall be validated against the data dictionary.
 
 **Acceptance Criteria:**
-- ERROR if SCD flow name is not defined in data dictionary
-- Error message format: `Flow '<flow_name>' in SCD '<scd_name>' is not defined in data dictionary`
+- ERROR if flow data type is not defined in data dictionary
+- Error message format: `Data type '<type_name>' in flow '<flow_name>' (SCD '<scd_name>') is not defined in data dictionary`
 - Error includes source file and line number of the flow definition
+- Control flows (empty parentheses) do not require data dictionary validation
+- Each type in a union data type (`Type1 | Type2`) is validated separately
 - Validation applies regardless of whether data dictionary is empty or absent
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
 
 ---
 
-#### REQ-SEM-062: DFD Flow Data Dictionary Validation [DONE]
-DFD flow names shall be validated against the data dictionary with ERROR severity.
+#### REQ-SEM-062: DFD Flow Data Type Validation [DONE]
+DFD internal flow data types shall be validated against the data dictionary.
 
 **Acceptance Criteria:**
-- ERROR if DFD flow name is not defined in data dictionary
-- Error message format: `Flow '<flow_name>' in DFD '<dfd_name>' is not defined in data dictionary`
+- ERROR if internal flow data type is not defined in data dictionary
+- Error message format: `Data type '<type_name>' in flow '<flow_name>' (DFD '<dfd_name>') is not defined in data dictionary`
 - Error includes source file and line number of the flow definition
+- Boundary flows (qualified names like `Parent.FlowName`) inherit validation from parent
+- Each type in a union data type is validated separately
 - Consistent with SCD flow validation (REQ-SEM-061)
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
 
 ---
 
-#### REQ-SEM-063: Namespaced Type Qualification Requirement [DONE]
-Types defined in named datadicts shall always require qualification when referenced in flows.
+#### REQ-SEM-062a: DFD Boundary Flow Inheritance [TODO]
+DFD boundary flows shall inherit their data type from the parent flow.
 
 **Acceptance Criteria:**
-- ERROR if unqualified name references a type that exists only in named datadict(s)
-- Error message suggests the qualified name(s): `"Flow 'X' must be qualified. Did you mean: Namespace.X?"`
+- Boundary flows use qualified names: `flow Parent.FlowName: -> Target`
+- If parentheses are omitted, data type is inherited from the parent flow
+- If parentheses are provided, the content must exactly match the parent's data type
+- Empty parentheses on boundary flow is valid ONLY if parent also has empty data type (control flow)
+- ERROR if boundary flow has explicit data type that differs from parent
+
+**Example:**
+```
+scd Context {
+    system Sys {}
+    external Ext {}
+    flow AuthFlow(LoginRequest): Ext -> Sys
+    flow ControlSignal(): Ext -> Sys  // control flow
+}
+
+dfd Level1 {
+    refines: Context.Sys
+    process Handler {}
+    
+    // Valid: inherits LoginRequest from parent
+    flow Context.AuthFlow: -> Handler
+    
+    // Valid: explicit type matches parent exactly
+    flow Context.AuthFlow(LoginRequest): -> Handler
+    
+    // ERROR: explicit type differs from parent
+    flow Context.AuthFlow(SomeOtherType): -> Handler
+    
+    // Valid: inherits empty (control flow) from parent
+    flow Context.ControlSignal: -> Handler
+}
+```
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-063: Namespaced Type Qualification Requirement [DONE]
+Data types defined in named datadicts shall always require qualification when referenced in flow data types.
+
+**Acceptance Criteria:**
+- ERROR if unqualified data type name references a type that exists only in named datadict(s)
+- Error message suggests the qualified name(s): `"Data type 'X' must be qualified. Did you mean: Namespace.X?"`
 - Unqualified references to anonymous datadict types remain valid
 - Qualified references to namespaced types are valid
 
@@ -681,11 +776,11 @@ datadict PaymentGateway {
     Request = { id: string }
 }
 
-// ERROR: "Flow 'Request' must be qualified. Did you mean: PaymentGateway.Request?"
-flow Request: System -> Gateway
+// ERROR: "Data type 'Request' must be qualified. Did you mean: PaymentGateway.Request?"
+flow SendRequest(Request): System -> Gateway
 
-// OK
-flow PaymentGateway.Request: System -> Gateway
+// OK: qualified data type
+flow SendRequest(PaymentGateway.Request): System -> Gateway
 ```
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_cross_references()`
@@ -916,8 +1011,8 @@ Each inbound flow to the parent element must be handled by exactly one process i
 **Acceptance Criteria:**
 - ERROR if an inbound parent flow is not handled by any process
 - ERROR if an inbound parent flow is handled by multiple processes
-- Flow matching is by name
-- Inbound boundary flow syntax: `flow Name: -> ProcessName`
+- Flow matching is by qualified name (e.g., `Parent.FlowName`)
+- Inbound boundary flow syntax: `flow Parent.FlowName: -> ProcessName`
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
 
@@ -929,23 +1024,25 @@ Each outbound flow from the parent element may be handled by zero or more proces
 **Acceptance Criteria:**
 - Outbound flows MAY originate from zero, one, or multiple processes (all valid)
 - No ERROR for unused outbound flows
-- Flow matching is by name
-- Outbound boundary flow syntax: `flow Name: ProcessName ->`
+- Flow matching is by qualified name (e.g., `Parent.FlowName`)
+- Outbound boundary flow syntax: `flow Parent.FlowName: ProcessName ->`
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
 
 ---
 
 #### REQ-SEM-084: DFD Boundary Flow Syntax [DONE]
-DFDs shall support boundary flows with a single endpoint.
+DFDs shall support boundary flows with a single endpoint using qualified flow names.
 
 **Acceptance Criteria:**
-- Inbound boundary flow: `flow Name: -> Endpoint`
-- Outbound boundary flow: `flow Name: Endpoint ->`
+- Boundary flows reference parent flows using qualified names: `Parent.FlowName`
+- Inbound boundary flow: `flow Parent.FlowName: -> Endpoint`
+- Outbound boundary flow: `flow Parent.FlowName: Endpoint ->`
 - Endpoint must be a process or local datastore within the DFD
-- Boundary flow name must match a flow in the parent diagram
+- Qualified flow name must match a flow in the parent diagram
 - Flow direction must be consistent with parent (inbound in parent = inbound in child)
 - Bidirectional parent flows can be decomposed into separate inbound and outbound boundary flows
+- Boundary flows inherit data type from parent (parentheses optional)
 
 **Implementation:**
 - Grammar: `src/designit/grammar/designit.lark`
@@ -1018,12 +1115,12 @@ Datadict type names must not conflict with diagram element names.
 
 ---
 
-#### REQ-SEM-090: Flow Type Decomposition in Refinements
-When a parent flow has a union type, the child DFD may decompose that flow into separate flows for each union alternative (subtype) instead of using the parent type directly.
+#### REQ-SEM-090: Flow Data Type Decomposition in Refinements
+When a parent flow has a union data type, the child DFD may decompose that flow into separate boundary flows for each union alternative (subtype) instead of using the parent data type directly.
 
 **Acceptance Criteria:**
-- Child DFD may use parent flow type directly (existing behavior)
-- Child DFD may use all subtypes of a union type instead of the parent type
+- Child DFD may use parent flow directly: `flow Parent.FlowName: -> Process`
+- Child DFD may decompose parent flow by data type subtypes
 - If decomposition is used, ALL subtypes must be covered (for inbound flows)
 - Subtypes follow the same coverage rules as parent types:
   - Inbound subtypes: exactly one process must handle each (per REQ-SEM-082)
@@ -1042,25 +1139,25 @@ datadict {
 scd Context {
     system PaymentSystem {}
     external Customer {}
-    flow PaymentMethod: Customer -> PaymentSystem
+    flow SubmitPayment(PaymentMethod): Customer -> PaymentSystem
 }
 
-// Valid: using parent type directly
+// Valid: using parent flow directly (inherits PaymentMethod data type)
 dfd DirectUse {
     refines: Context.PaymentSystem
     process HandlePayment {}
-    flow PaymentMethod: -> HandlePayment
+    flow Context.SubmitPayment: -> HandlePayment
 }
 
-// Valid: decomposed into all subtypes
+// Valid: decomposed into separate flows for each subtype
 dfd Decomposed {
     refines: Context.PaymentSystem
     process ProcessCards {}
     process ProcessBank {}
     process ProcessCash {}
-    flow CreditCard: -> ProcessCards
-    flow BankTransfer: -> ProcessBank
-    flow Cash: -> ProcessCash
+    flow Context.SubmitPayment(CreditCard): -> ProcessCards
+    flow Context.SubmitPayment(BankTransfer): -> ProcessBank
+    flow Context.SubmitPayment(Cash): -> ProcessCash
 }
 ```
 
@@ -1068,12 +1165,12 @@ dfd Decomposed {
 
 ---
 
-#### REQ-SEM-091: Flow Type Decomposition Mixing Prohibition
-A child DFD shall not mix a parent flow type with its subtypes in the same refinement.
+#### REQ-SEM-091: Flow Data Type Decomposition Mixing Prohibition
+A child DFD shall not mix a parent flow's data type with its subtypes in the same refinement.
 
 **Acceptance Criteria:**
-- ERROR if child uses both parent type AND any of its subtypes
-- Error message: `Flow type 'X' cannot be mixed with its subtype 'Y' in refinement of 'Parent.Element'`
+- ERROR if child uses both parent data type AND any of its subtypes for the same flow
+- Error message: `Flow 'X' cannot use both parent type 'Y' and subtype 'Z' in refinement of 'Parent.Element'`
 - This applies at each level of union nesting
 
 **Example:**
@@ -1087,16 +1184,16 @@ datadict {
 scd Context {
     system PaymentSystem {}
     external Customer {}
-    flow PaymentMethod: Customer -> PaymentSystem
+    flow SubmitPayment(PaymentMethod): Customer -> PaymentSystem
 }
 
-// ERROR: mixes parent type with subtype
+// ERROR: mixes parent data type with subtype
 dfd InvalidMixed {
     refines: Context.PaymentSystem
     process HandleAll {}
     process HandleCards {}
-    flow PaymentMethod: -> HandleAll    // Uses parent type
-    flow CreditCard: -> HandleCards     // AND uses subtype - ERROR
+    flow Context.SubmitPayment: -> HandleAll            // Uses parent (PaymentMethod)
+    flow Context.SubmitPayment(CreditCard): -> HandleCards  // AND uses subtype - ERROR
 }
 ```
 
@@ -1104,8 +1201,8 @@ dfd InvalidMixed {
 
 ---
 
-#### REQ-SEM-092: Nested Union Type Decomposition
-When decomposing a union type, the child DFD may stop at any level of the union hierarchy, but must not mix levels within the same parent type.
+#### REQ-SEM-092: Nested Union Data Type Decomposition
+When decomposing a union data type, the child DFD may stop at any level of the union hierarchy, but must not mix levels within the same parent flow.
 
 **Acceptance Criteria:**
 - Decomposition may stop at intermediate union types (not required to go to leaf types)
@@ -1125,7 +1222,7 @@ datadict {
 scd Context {
     system PaymentSystem {}
     external Customer {}
-    flow PaymentMethod: Customer -> PaymentSystem
+    flow SubmitPayment(PaymentMethod): Customer -> PaymentSystem
 }
 
 // Valid: decompose to first level (CardPayment, BankTransfer)
@@ -1133,8 +1230,8 @@ dfd Level1 {
     refines: Context.PaymentSystem
     process ProcessCards {}
     process ProcessBank {}
-    flow CardPayment: -> ProcessCards
-    flow BankTransfer: -> ProcessBank
+    flow Context.SubmitPayment(CardPayment): -> ProcessCards
+    flow Context.SubmitPayment(BankTransfer): -> ProcessBank
 }
 
 // Valid: decompose to leaf level (CreditCard, DebitCard, BankTransfer)
@@ -1143,9 +1240,9 @@ dfd LeafLevel {
     process ProcessCredit {}
     process ProcessDebit {}
     process ProcessBank {}
-    flow CreditCard: -> ProcessCredit
-    flow DebitCard: -> ProcessDebit
-    flow BankTransfer: -> ProcessBank
+    flow Context.SubmitPayment(CreditCard): -> ProcessCredit
+    flow Context.SubmitPayment(DebitCard): -> ProcessDebit
+    flow Context.SubmitPayment(BankTransfer): -> ProcessBank
 }
 
 // ERROR: mixes levels (CardPayment with CreditCard)
@@ -1154,13 +1251,154 @@ dfd MixedLevels {
     process ProcessCards {}
     process ProcessCredit {}
     process ProcessBank {}
-    flow CardPayment: -> ProcessCards   // Level 1
-    flow CreditCard: -> ProcessCredit   // Level 2 - ERROR: mixes with CardPayment
-    flow BankTransfer: -> ProcessBank
+    flow Context.SubmitPayment(CardPayment): -> ProcessCards   // Level 1
+    flow Context.SubmitPayment(CreditCard): -> ProcessCredit   // Level 2 - ERROR
+    flow Context.SubmitPayment(BankTransfer): -> ProcessBank
 }
 ```
 
 **Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+### 2.2.2 Flow Unions
+
+#### REQ-SEM-110: Flow Union Definition [DONE]
+The DSL shall support defining flow unions within SCD and DFD diagrams.
+
+**Acceptance Criteria:**
+- Syntax: `flow UnionName = Flow1 | Flow2 | ...`
+- Flow unions must be defined in the same diagram as their member flows
+- Single-member unions (aliases) are allowed: `flow AliasName = ExistingFlow`
+- Member flows must be defined before the union (or be other unions)
+- Union name must be unique within the diagram's flow namespace
+- Member flows are moved from the standalone `flows` dict into the union's `members` list
+- Member flows are no longer accessible as standalone flows after union creation
+
+**Model Structure:**
+- `SCDFlowUnion.members`: `list[SCDFlow]` - actual flow objects, not names
+- `DFDFlowUnion.members`: `list[DataFlow]` - actual flow objects, not names
+- `requested_member_names`: `list[str]` - original member names from DSL (for validation)
+- `member_names` property: returns list of resolved member flow names
+
+**Example:**
+```
+scd Context {
+    external Customer {}
+    system PaymentSystem {}
+    
+    // Individual flows with explicit data types
+    flow SendLoginRequest(LoginRequest): Customer -> PaymentSystem
+    flow ReceiveLoginResponse(LoginResponse): PaymentSystem -> Customer
+    
+    // Flow union bundles multiple flows
+    flow LoginSession = SendLoginRequest | ReceiveLoginResponse
+}
+```
+
+**Implementation:**
+- Grammar: `src/designit/grammar/designit.lark`
+- AST: `src/designit/parser/ast_nodes.py`
+- Model: `src/designit/model/scd.py`, `src/designit/model/dfd.py`
+- Analyzer: `src/designit/semantic/analyzer.py` (moves flows into unions)
+
+---
+
+#### REQ-SEM-111: Flow Union Direction Inference [DONE]
+Flow union direction shall be inferred from its member flows.
+
+**Acceptance Criteria:**
+- If all members are inbound → union is inbound
+- If all members are outbound → union is outbound
+- If mixed directions → union is bidirectional
+- For single-member unions (aliases): direction equals member's direction
+- Direction is computed via property from member flows (not stored separately)
+
+**Implementation:**
+- `src/designit/model/scd.py:SCDFlowUnion.direction` property
+- `src/designit/model/dfd.py:DFDFlowUnion.direction` property
+
+---
+
+#### REQ-SEM-112: Flow Union Endpoint Consistency [TODO]
+All member flows in a union must share compatible endpoints.
+
+**Acceptance Criteria:**
+- ERROR if member flows have incompatible endpoints
+- Compatible means: same endpoint pair (order may differ based on direction)
+- For inbound flows: targets must match
+- For outbound flows: sources must match
+- For bidirectional unions: all endpoints must be the same pair
+
+**Example:**
+```
+// Valid: same endpoints
+flow RequestA(TypeA): Customer -> System
+flow ResponseB(TypeB): System -> Customer
+flow SessionAB = RequestA | ResponseB  // OK: both involve Customer<->System
+
+// Invalid: different endpoints
+flow RequestC(TypeC): Customer -> System
+flow RequestD(TypeD): Admin -> System
+flow SessionCD = RequestC | RequestD  // ERROR: C involves Customer, D involves Admin
+```
+
+**Implementation:** `src/designit/semantic/validator.py`
+
+---
+
+#### REQ-SEM-113: Flow Union Nesting [DONE]
+Flow unions may contain other flow unions as members.
+
+**Acceptance Criteria:**
+- A union can reference another union as a member
+- Nested unions are flattened during analysis (member flows from nested union are included)
+- Circular references are detected and reported as ERROR
+- Self-reference (union containing itself) is detected and reported as ERROR
+
+**Example:**
+```
+flow SendLogin(LoginRequest): Customer -> System
+flow ReceiveLogin(LoginResponse): System -> Customer
+flow LoginSession = SendLogin | ReceiveLogin
+
+flow SendLogout(LogoutRequest): Customer -> System
+flow ReceiveLogout(LogoutResponse): System -> Customer
+flow LogoutSession = SendLogout | ReceiveLogout
+
+// Nested union
+flow AuthSession = LoginSession | LogoutSession
+```
+
+**Implementation:**
+- `src/designit/semantic/analyzer.py` (flattens nested unions)
+- `src/designit/semantic/validator.py` (validates self-reference)
+
+---
+
+#### REQ-SEM-114: Flow Union Child DFD Handling [TODO]
+Child DFDs may either use the union name directly or decompose it into member flows.
+
+**Acceptance Criteria:**
+- **Pass-through**: Child can use `flow Parent.UnionName: -> Process` to handle entire bundle
+- **Decomposition**: Child can list individual member flows instead
+- Coverage rules apply to decomposition:
+  - ALL inbound member flows must be handled (per REQ-SEM-082)
+  - ZERO or more outbound member flows may be handled (per REQ-SEM-083)
+- Cannot mix union usage with member usage at same level (per REQ-SEM-115)
+
+**Implementation:** `src/designit/semantic/validator.py:Validator._validate_dfd_refinements()`
+
+---
+
+#### REQ-SEM-115: Flow Union No Mixing Rule [TODO]
+A child DFD shall not use both a flow union and any of its members.
+
+**Acceptance Criteria:**
+- ERROR if child uses union name AND any of its members (direct or nested)
+- Error message: `Flow union 'X' cannot be mixed with its member 'Y' in DFD 'Z'`
+
+**Implementation:** `src/designit/semantic/validator.py`
 
 ---
 
@@ -2501,6 +2739,51 @@ SCD datastores shall be rendered without embedded descriptions.
 - Description available via document generation (REQ-DOC-011)
 
 **Implementation:** `src/designit/generators/graphviz.py:GraphVizGenerator._write_scd_datastores()`
+
+---
+
+#### REQ-GEN-080: Flow Union Rendering Option [DONE]
+The generate command shall support configuring how flow unions are rendered.
+
+**Acceptance Criteria:**
+- Option: `--expand-unions` / no flag (default: bundled)
+- Bundled (default): Union shown as single flow line with union name and member count
+- Expanded (`--expand-unions`): Individual member flows shown with union annotation
+- Applies to both Mermaid and GraphViz output
+- Standalone flows (not in any union) are always rendered normally
+
+**Implementation:**
+- CLI: `src/designit/cli.py`
+- Generators: `src/designit/generators/mermaid.py`, `src/designit/generators/graphviz.py`
+
+---
+
+#### REQ-GEN-081: Flow Union Bundled Rendering [DONE]
+When rendering bundled (default), flow unions shall appear as styled single flows.
+
+**Acceptance Criteria:**
+- Single line connecting the endpoints (uses first member's endpoints)
+- Label shows union name with member count (e.g., "LoginSession (2 flows)")
+- Direction arrow matches inferred direction (bidirectional for mixed)
+- Standalone flows outside unions are rendered normally
+
+**Implementation:**
+- `src/designit/generators/mermaid.py:MermaidGenerator._write_scd_union_flow()`
+- `src/designit/generators/graphviz.py:GraphVizGenerator._write_scd_union_flow()`
+
+---
+
+#### REQ-GEN-082: Flow Union Expanded Rendering [DONE]
+When `--expand-unions` is set, flow unions shall be rendered as individual member flows.
+
+**Acceptance Criteria:**
+- Each member flow rendered separately
+- Member flow labels include union name annotation (e.g., "LoginRequest [LoginSession]")
+- Works recursively for nested unions (nested union members are flattened at analysis time)
+
+**Implementation:**
+- `src/designit/generators/mermaid.py:MermaidGenerator._write_scd_flows()`
+- `src/designit/generators/graphviz.py:GraphVizGenerator._write_scd_flows()`
 
 ---
 

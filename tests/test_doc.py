@@ -28,10 +28,13 @@ class TestMarkdownParsing:
     def test_markdown_block_parses(self) -> None:
         """Markdown blocks should parse correctly."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API {}
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
 
         markdown {
@@ -238,10 +241,13 @@ class TestTemplateValidator:
     def test_validate_valid_diagram_reference(self) -> None:
         """Valid diagram reference should pass validation."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API {}
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = self._make_document(source)
@@ -274,10 +280,13 @@ class TestTemplateValidator:
     def test_validate_valid_property_access(self) -> None:
         """Valid property access should pass validation."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API { description: "The API" }
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = self._make_document(source)
@@ -309,10 +318,13 @@ class TestTemplateValidator:
     def test_validate_valid_each_collection(self) -> None:
         """Valid #each collection should pass validation."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API {}
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = self._make_document(source)
@@ -388,10 +400,13 @@ class TestMarkdownGenerator:
     def test_generate_diagram_reference(self) -> None:
         """Diagram reference should generate image link."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API {}
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = self._make_document(source)
@@ -409,10 +424,13 @@ class TestMarkdownGenerator:
     def test_generate_property_value(self) -> None:
         """Property access should generate value."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API { description: "The API system" }
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = self._make_document(source)
@@ -427,12 +445,16 @@ class TestMarkdownGenerator:
     def test_generate_each_iteration(self) -> None:
         """#each should iterate over collection."""
         source = """
+        datadict {
+            F1 = { data: string }
+            F2 = { data: string }
+        }
         scd Context {
             system API {}
             external Client1 {}
             external Client2 {}
-            flow F1: Client1 -> API
-            flow F2: Client2 -> API
+            flow F1(F1): Client1 -> API
+            flow F2(F2): Client2 -> API
         }
         """
         doc = self._make_document(source)
@@ -458,10 +480,13 @@ class TestMarkdownGenerator:
         Expected: {API}
         """
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API { description: "The API" }
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         """
         doc = self._make_document(source)
@@ -478,15 +503,18 @@ class TestMarkdownGenerator:
     def test_diagram_reference_includes_type_prefix(self) -> None:
         """Diagram references should include type prefix in filename."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API {}
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
         dfd ProcessFlow {
             refines: Context.API
             process Handler {}
-            flow Request: -> Handler
+            flow Context.Request: -> Handler
         }
         """
         doc = self._make_document(source)
@@ -511,10 +539,13 @@ class TestGenerateDocument:
     def test_generate_simple_document(self) -> None:
         """Simple document with markdown should generate."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API { description: "Main API" }
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
 
         markdown {
@@ -549,10 +580,13 @@ class TestGenerateDocument:
     def test_generate_document_with_diagram(self) -> None:
         """Document with diagram reference should list diagram refs."""
         source = """
+        datadict {
+            Request = { data: string }
+        }
         scd Context {
             system API {}
             external Client {}
-            flow Request: Client -> API
+            flow Request(Request): Client -> API
         }
 
         markdown {
@@ -603,12 +637,16 @@ class TestCollectionValidation:
     def test_scd_valid_collections(self) -> None:
         """SCD should accept valid collections: externals, datastores, flows."""
         source = """
+        datadict {
+            Request = { data: string }
+            Data = { value: string }
+        }
         scd Context {
             system API {}
             external Client {}
             datastore DB {}
-            flow Request: Client -> API
-            flow Data: API -> DB
+            flow Request(Request): Client -> API
+            flow Data(Data): API -> DB
         }
         """
         doc = analyze_string(source)
@@ -623,17 +661,21 @@ class TestCollectionValidation:
     def test_dfd_valid_collections(self) -> None:
         """DFD should accept valid collections: processes, datastores, flows."""
         source = """
+        datadict {
+            F = { data: string }
+            CacheOp = { value: string }
+        }
         scd Ctx {
             system Sys {}
             external E {}
-            flow F: E -> Sys
+            flow F(F): E -> Sys
         }
         dfd MyDFD {
             refines: Ctx.Sys
             process Handler {}
             datastore Cache {}
-            flow F: -> Handler
-            flow CacheOp: Handler -> Cache
+            flow Ctx.F: -> Handler
+            flow CacheOp(CacheOp): Handler -> Cache
         }
         """
         doc = analyze_string(source)

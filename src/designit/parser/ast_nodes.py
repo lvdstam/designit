@@ -48,6 +48,8 @@ class PlaceholderNode(ASTNode):
 class FlowTypeRefNode(ASTNode):
     """A reference to a flow type, possibly qualified with namespace.
 
+    Used within FlowDataTypeNode to represent each type in the data type clause.
+
     Examples:
     - Simple: "Money" -> namespace=None, name="Money"
     - Qualified: "PaymentGateway.Request" -> namespace="PaymentGateway", name="Request"
@@ -62,6 +64,42 @@ class FlowTypeRefNode(ASTNode):
         if self.namespace:
             return f"{self.namespace}.{self.name}"
         return self.name
+
+
+class FlowDataTypeNode(ASTNode):
+    """Represents the data type clause of a flow.
+
+    The data type clause is the content in parentheses after the flow name:
+    - `flow Name(DataType)` -> types = [FlowTypeRefNode("DataType")]
+    - `flow Name(Type1 | Type2)` -> types = [FlowTypeRefNode("Type1"), FlowTypeRefNode("Type2")]
+    - `flow Name()` -> types = [] (control flow, no data)
+
+    For DFD boundary flows, data_type may be None to indicate inheritance from parent.
+    """
+
+    types: list[FlowTypeRefNode] = Field(default_factory=list)
+
+    @property
+    def is_control_flow(self) -> bool:
+        """Return True if this is a control flow (no data)."""
+        return len(self.types) == 0
+
+    @property
+    def is_union(self) -> bool:
+        """Return True if this carries multiple data types."""
+        return len(self.types) > 1
+
+    @property
+    def primary_type(self) -> FlowTypeRefNode | None:
+        """Return the primary (or only) type, or None for control flows."""
+        return self.types[0] if self.types else None
+
+    @property
+    def display_name(self) -> str:
+        """Return display string for the data type clause."""
+        if not self.types:
+            return "()"
+        return "(" + " | ".join(t.qualified_name for t in self.types) + ")"
 
 
 class PropertyNode(ASTNode):
@@ -138,14 +176,40 @@ class FlowNode(ASTNode):
       - Inbound: source is None, target is set
       - Outbound: source is set, target is None
 
-    The type_ref contains the flow type, which may be qualified (Namespace.TypeName).
+    Flow names can be simple or qualified:
+      - Simple: "InternalFlow" -> namespace=None, name="InternalFlow"
+      - Qualified: "Parent.BoundaryFlow" -> namespace="Parent", name="BoundaryFlow"
+
+    Boundary flows (qualified names) may have data_type=None to inherit from parent.
+    Internal flows must have data_type set.
     """
 
-    name: str  # Simple name (for backward compat and display)
-    type_ref: FlowTypeRefNode | None = None  # Full type reference with optional namespace
+    name: str  # Simple name (just the flow name part)
+    namespace: str | None = None  # Parent diagram name for boundary flows
+    data_type: FlowDataTypeNode | None = None  # Data type clause; None means inherited
     source: FlowEndpointNode | None = None
     target: FlowEndpointNode | None = None
     properties: list[PropertyNode] = Field(default_factory=list)
+
+    # Keep for backward compatibility during migration
+    type_ref: FlowTypeRefNode | None = None
+
+    @property
+    def qualified_name(self) -> str:
+        """Return the fully qualified flow name."""
+        if self.namespace:
+            return f"{self.namespace}.{self.name}"
+        return self.name
+
+    @property
+    def is_boundary_flow(self) -> bool:
+        """Return True if this is a boundary flow (qualified name)."""
+        return self.namespace is not None
+
+    @property
+    def inherits_data_type(self) -> bool:
+        """Return True if this boundary flow inherits its data type from parent."""
+        return self.namespace is not None and self.data_type is None
 
 
 class DFDNode(ASTNode):
@@ -163,6 +227,7 @@ class DFDNode(ASTNode):
     processes: list[ProcessNode] = Field(default_factory=list)
     datastores: list[DatastoreNode] = Field(default_factory=list)
     flows: list[FlowNode] = Field(default_factory=list)
+    flow_unions: list[FlowUnionNode] = Field(default_factory=list)
 
 
 # ============================================
@@ -180,15 +245,36 @@ class SystemNode(ASTNode):
 class SCDFlowNode(ASTNode):
     """A data flow in an SCD with direction.
 
-    The type_ref contains the flow type, which may be qualified (Namespace.TypeName).
+    SCD flows always have explicit data types (parentheses required).
+    Control flows use empty parentheses: `flow Name(): Source -> Target`
+
+    The data_type contains the flow's data type information.
     """
 
-    name: str  # Simple name (for backward compat and display)
-    type_ref: FlowTypeRefNode | None = None  # Full type reference with optional namespace
+    name: str  # Flow name (always simple, not qualified)
+    data_type: FlowDataTypeNode  # Data type clause (required for SCD)
     source: str
     target: str
     direction: Literal["inbound", "outbound", "bidirectional"]
     properties: list[PropertyNode] = Field(default_factory=list)
+
+    # Keep for backward compatibility during migration
+    type_ref: FlowTypeRefNode | None = None
+
+
+class FlowUnionNode(ASTNode):
+    """A flow union definition combining multiple flows.
+
+    Flow unions can be defined in SCD or DFD diagrams. They combine multiple
+    flows into a single named bundle for visual simplification at higher
+    abstraction levels.
+
+    Example:
+        flow LoginSession = LoginRequest | LoginResponse
+    """
+
+    name: str
+    members: list[str] = Field(default_factory=list)  # Flow names
 
 
 class SCDNode(ASTNode):
@@ -199,6 +285,7 @@ class SCDNode(ASTNode):
     externals: list[ExternalNode] = Field(default_factory=list)
     datastores: list[DatastoreNode] = Field(default_factory=list)
     flows: list[SCDFlowNode] = Field(default_factory=list)
+    flow_unions: list[FlowUnionNode] = Field(default_factory=list)
 
 
 # ============================================

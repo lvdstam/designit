@@ -91,6 +91,7 @@ class Validator:
         self._validate_scds(doc)
         self._validate_datadict(doc)
         self._validate_cross_references(doc)
+        self._validate_flow_unions(doc)
         self._report_placeholders(doc)
 
         return self.messages
@@ -192,44 +193,57 @@ class Validator:
     def _validate_dfds(self, doc: DesignDocument) -> None:
         """Validate all DFDs."""
         for dfd_name, dfd in doc.dfds.items():
-            # Check that flows reference valid elements
-            all_elements = (
-                set(dfd.externals.keys()) | set(dfd.processes.keys()) | set(dfd.datastores.keys())
-            )
+            self._validate_dfd_flow_references(dfd_name, dfd)
+            self._validate_dfd_orphan_elements(dfd_name, dfd)
 
-            for (flow_name, _flow_type), flow in dfd.flows.items():
-                # For boundary flows, source or target may be None
-                if flow.source is not None and flow.source.name not in all_elements:
-                    self._error(
-                        f"Flow '{flow_name}' references unknown source '{flow.source.name}'",
-                        flow_name,
-                        flow.source_file,
-                        flow.line,
-                    )
-                if flow.target is not None and flow.target.name not in all_elements:
-                    self._error(
-                        f"Flow '{flow_name}' references unknown target '{flow.target.name}'",
-                        flow_name,
-                        flow.source_file,
-                        flow.line,
-                    )
+    def _validate_dfd_flow_references(self, dfd_name: str, dfd: Any) -> None:
+        """Check that flows reference valid elements."""
+        all_elements = (
+            set(dfd.externals.keys()) | set(dfd.processes.keys()) | set(dfd.datastores.keys())
+        )
 
-            # Check for orphan elements (no flows in or out)
-            elements_with_flows: set[str] = set()
-            for flow in dfd.flows.values():
-                if flow.source is not None:
-                    elements_with_flows.add(flow.source.name)
-                if flow.target is not None:
-                    elements_with_flows.add(flow.target.name)
+        for (flow_name, _flow_type), flow in dfd.flows.items():
+            # For boundary flows, source or target may be None
+            if flow.source is not None and flow.source.name not in all_elements:
+                self._error(
+                    f"Flow '{flow_name}' references unknown source '{flow.source.name}'",
+                    flow_name,
+                    flow.source_file,
+                    flow.line,
+                )
+            if flow.target is not None and flow.target.name not in all_elements:
+                self._error(
+                    f"Flow '{flow_name}' references unknown target '{flow.target.name}'",
+                    flow_name,
+                    flow.source_file,
+                    flow.line,
+                )
 
-            for element in dfd.all_elements():
-                if element.name not in elements_with_flows and not element.is_placeholder:
-                    self._warning(
-                        f"Element '{element.name}' has no data flows",
-                        element.name,
-                        element.source_file,
-                        element.line,
-                    )
+    def _validate_dfd_orphan_elements(self, dfd_name: str, dfd: Any) -> None:
+        """Check for elements with no flows in or out."""
+        elements_with_flows: set[str] = set()
+        for flow in dfd.flows.values():
+            if flow.source is not None:
+                elements_with_flows.add(flow.source.name)
+            if flow.target is not None:
+                elements_with_flows.add(flow.target.name)
+
+        # Also check flows inside unions
+        for union in dfd.flow_unions.values():
+            for member_flow in union.members:
+                if member_flow.source is not None:
+                    elements_with_flows.add(member_flow.source.name)
+                if member_flow.target is not None:
+                    elements_with_flows.add(member_flow.target.name)
+
+        for element in dfd.all_elements():
+            if element.name not in elements_with_flows and not element.is_placeholder:
+                self._warning(
+                    f"Element '{element.name}' has no data flows",
+                    element.name,
+                    element.source_file,
+                    element.line,
+                )
 
     def _validate_dfd_flow_coverage(self, doc: DesignDocument) -> None:
         """Validate DFD flow coverage against parent diagram.
@@ -803,6 +817,12 @@ class Validator:
             elements_with_flows.add(flow.source.name)
             elements_with_flows.add(flow.target.name)
 
+        # Also check flows inside unions
+        for union in scd.flow_unions.values():
+            for member_flow in union.members:
+                elements_with_flows.add(member_flow.source.name)
+                elements_with_flows.add(member_flow.target.name)
+
         for element in scd.all_elements():
             if element.name not in elements_with_flows and not element.is_placeholder:
                 self._warning(
@@ -1071,9 +1091,25 @@ class Validator:
         data_types: set[str],
         namespaced_simple_names: dict[str, list[str]],
     ) -> None:
-        """Validate DFD flow types against data dictionary."""
+        """Validate DFD flow types against data dictionary.
+
+        For boundary flows that reference a parent flow (parent_ref is set):
+        - If type_ref is None, the flow inherits its data type from the parent
+        - The parent flow's type was already validated at the SCD level
+        - Skip data dictionary validation for these inherited flows
+
+        For internal flows or boundary flows with explicit type_ref:
+        - Validate the type against data dictionary
+        """
         for dfd_name, dfd in doc.dfds.items():
             for flow in dfd.flows.values():
+                # Skip data dictionary validation for inherited boundary flows
+                # These have parent_ref set (e.g., "flow Context.PayFlow: -> Handler")
+                # and type_ref is None (no explicit type clause)
+                # The parent flow's data type was validated at the SCD level
+                if flow.parent_ref is not None and flow.type_ref is None:
+                    continue
+
                 type_name = flow.type_ref.qualified_name if flow.type_ref else flow.name
                 self._check_flow_type(
                     flow, type_name, f"DFD '{dfd_name}'", data_types, namespaced_simple_names
@@ -1341,6 +1377,132 @@ class Validator:
             else:
                 # Namespaced type: check against same-named SCD or DFD only
                 self._check_namespaced_type_conflict(defn, doc)
+
+    def _validate_flow_unions(self, doc: DesignDocument) -> None:
+        """Validate flow unions in SCDs and DFDs.
+
+        REQ-SEM-110: All member flows must exist in the same diagram.
+        REQ-SEM-111: Direction is inferred from member flows.
+        REQ-SEM-112: Nesting is allowed (unions can contain other unions).
+        """
+        # Validate SCD flow unions
+        for scd_name, scd in doc.scds.items():
+            self._validate_scd_flow_unions(scd_name, scd)
+
+        # Validate DFD flow unions
+        for dfd_name, dfd in doc.dfds.items():
+            self._validate_dfd_flow_unions(dfd_name, dfd)
+
+    def _validate_scd_flow_unions(self, scd_name: str, scd: SCDModel) -> None:
+        """Validate flow unions in an SCD.
+
+        With the new model, member flows are stored directly in the union.
+        If a member wasn't found during analysis, it won't be in union.members.
+        We compare requested_member_names with member_names to find missing members.
+        """
+        # Get all flow names (standalone flows not in any union)
+        flow_names = set(scd.flows.keys())
+        union_names = set(scd.flow_unions.keys())
+
+        # Also track all flow names that are in unions
+        union_member_names: set[str] = set()
+        for union in scd.flow_unions.values():
+            union_member_names.update(union.member_names)
+
+        for union_name, union in scd.flow_unions.items():
+            # Check for empty unions (no members resolved)
+            if not union.members:
+                self._error(
+                    f"Flow union '{union_name}' has no members",
+                    union_name,
+                    union.source_file,
+                    union.line,
+                )
+                continue
+
+            # Check for members that weren't resolved
+            resolved_names = set(union.member_names)
+            for requested_name in union.requested_member_names:
+                if requested_name not in resolved_names and requested_name not in union_names:
+                    msg = f"Flow union '{union_name}' references non-existent flow "
+                    msg += f"'{requested_name}'"
+                    self._error(
+                        msg,
+                        union_name,
+                        union.source_file,
+                        union.line,
+                    )
+
+            # Check for self-reference (union name appears in requested member names)
+            if union_name in union.requested_member_names:
+                self._error(
+                    f"Flow union '{union_name}' cannot contain itself",
+                    union_name,
+                    union.source_file,
+                    union.line,
+                )
+
+            # Check for name conflicts with standalone flows
+            if union_name in flow_names:
+                self._error(
+                    f"Flow union '{union_name}' conflicts with existing flow of same name",
+                    union_name,
+                    union.source_file,
+                    union.line,
+                )
+
+    def _validate_dfd_flow_unions(self, dfd_name: str, dfd: DFDModel) -> None:
+        """Validate flow unions in a DFD.
+
+        With the new model, member flows are stored directly in the union.
+        If a member wasn't found during analysis, it won't be in union.members.
+        We compare requested_member_names with member_names to find missing members.
+        """
+        # Get all flow names in this DFD (standalone flows not in any union)
+        flow_names: set[str] = {name for (name, _) in dfd.flows.keys()}
+        union_names = set(dfd.flow_unions.keys())
+
+        for union_name, union in dfd.flow_unions.items():
+            # Check for empty unions (no members resolved)
+            if not union.members:
+                self._error(
+                    f"Flow union '{union_name}' has no members",
+                    union_name,
+                    union.source_file,
+                    union.line,
+                )
+                continue
+
+            # Check for members that weren't resolved
+            resolved_names = set(union.member_names)
+            for requested_name in union.requested_member_names:
+                if requested_name not in resolved_names and requested_name not in union_names:
+                    msg = f"Flow union '{union_name}' references non-existent flow "
+                    msg += f"'{requested_name}'"
+                    self._error(
+                        msg,
+                        union_name,
+                        union.source_file,
+                        union.line,
+                    )
+
+            # Check for self-reference (union name appears in requested member names)
+            if union_name in union.requested_member_names:
+                self._error(
+                    f"Flow union '{union_name}' cannot contain itself",
+                    union_name,
+                    union.source_file,
+                    union.line,
+                )
+
+            # Check for name conflicts with standalone flows
+            if union_name in flow_names:
+                self._error(
+                    f"Flow union '{union_name}' conflicts with existing flow of same name",
+                    union_name,
+                    union.source_file,
+                    union.line,
+                )
 
     def _report_placeholders(self, doc: DesignDocument) -> None:
         """Report all placeholder elements."""

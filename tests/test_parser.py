@@ -44,8 +44,8 @@ class TestDFDParsing:
             system TestSystem {}
             external User {}
             datastore Database {}
-            flow Request: User -> TestSystem
-            flow Data: TestSystem -> Database
+            flow Request(RequestData): User -> TestSystem
+            flow Data(DataPayload): TestSystem -> Database
         }
         dfd TestDFD {
             refines: Context.TestSystem
@@ -53,9 +53,9 @@ class TestDFDParsing:
                 description: "Handles user requests"
             }
             datastore LocalCache {}
-            flow Request: -> HandleRequest
-            flow Data: HandleRequest ->
-            flow CacheWrite: HandleRequest -> LocalCache
+            flow Context.Request: -> HandleRequest
+            flow Context.Data: HandleRequest ->
+            flow CacheWrite(CacheData): HandleRequest -> LocalCache
         }
         """
         doc = parse_string(source)
@@ -227,8 +227,8 @@ class TestSCDParsing:
             external PaymentGateway {
                 description: "Handles payments"
             }
-            flow OrderRequest: Customer -> OrderSystem
-            flow Confirmation: OrderSystem -> Customer
+            flow OrderRequest(OrderData): Customer -> OrderSystem
+            flow Confirmation(ConfirmData): OrderSystem -> Customer
         }
         """
         doc = parse_string(source)
@@ -248,8 +248,8 @@ class TestSCDParsing:
             datastore Database {
                 description: "Primary database"
             }
-            flow Query: MainSystem -> Database
-            flow Results: Database -> MainSystem
+            flow Query(QueryData): MainSystem -> Database
+            flow Results(ResultData): Database -> MainSystem
         }
         """
         doc = parse_string(source)
@@ -263,7 +263,7 @@ class TestSCDParsing:
         scd BidiSystem {
             system Core {}
             external Partner {}
-            flow DataExchange: Core <-> Partner
+            flow DataExchange(ExchangeData): Core <-> Partner
         }
         """
         doc = parse_string(source)
@@ -352,7 +352,7 @@ class TestNodeLocation:
         source = """scd Test {
     system S {}
     external MyExternal {}
-    flow F: MyExternal -> S
+    flow F(Data): MyExternal -> S
 }
 """
         doc = parse_string(source)
@@ -405,7 +405,7 @@ dfd Test {
         source = """scd Test {
     system MySystem {}
     external E {}
-    flow F: E -> MySystem
+    flow F(Data): E -> MySystem
 }
 """
         doc = parse_string(source)
@@ -420,7 +420,7 @@ dfd Test {
         source = """scd Test {
     system S {}
     external MyExternal {}
-    flow F: MyExternal -> S
+    flow F(Data): MyExternal -> S
 }
 """
         doc = parse_string(source)
@@ -435,7 +435,7 @@ dfd Test {
         source = """scd Test {
     system S {}
     datastore MyDatastore {}
-    flow F: S -> MyDatastore
+    flow F(Data): S -> MyDatastore
 }
 """
         doc = parse_string(source)
@@ -565,13 +565,13 @@ class TestFlowLocation:
         source = """scd Ctx {
     system S {}
     external A {}
-    flow F: A -> S
+    flow F(Data): A -> S
 }
 dfd Test {
     refines: Ctx.S
     process B {}
-    flow InboundF: -> B
-    flow MyFlow: B ->
+    flow Ctx.F: -> B
+    flow MyFlow(OutData): B ->
 }
 """
         doc = parse_string(source)
@@ -586,7 +586,7 @@ dfd Test {
         source = """scd Test {
     system Core {}
     external User {}
-    flow MyFlow: User -> Core
+    flow MyFlow(Data): User -> Core
 }
 """
         doc = parse_string(source)
@@ -603,9 +603,9 @@ dfd Test {
     system Core {}
     external A {}
     external B {}
-    flow Flow1: A -> Core
-    flow Flow2: Core -> B
-    flow Flow3: A <-> B
+    flow Flow1(D1): A -> Core
+    flow Flow2(D2): Core -> B
+    flow Flow3(D3): A <-> B
 }
 """
         doc = parse_string(source)
@@ -628,7 +628,7 @@ dfd Test {
         source = """scd Test {
     system Core {}
     external User {}
-    flow MyFlow: User -> Core
+    flow MyFlow(Data): User -> Core
 }
 """
         doc = parse_string(source)
@@ -653,7 +653,7 @@ class TestRefinesParsing:
         scd OrderContext {
             system OrderSystem {}
             external Customer {}
-            flow OrderRequest: Customer -> OrderSystem
+            flow OrderRequest(OrderData): Customer -> OrderSystem
         }
 
         dfd Level0 {
@@ -661,7 +661,7 @@ class TestRefinesParsing:
 
             process ValidateOrder {}
 
-            flow OrderRequest: -> ValidateOrder
+            flow OrderContext.OrderRequest: -> ValidateOrder
         }
         """
         doc = parse_string(source)
@@ -679,7 +679,7 @@ class TestRefinesParsing:
         scd Context {
             system Sys {}
             external Ext {}
-            flow F: Ext -> Sys
+            flow F(Data): Ext -> Sys
         }
 
         dfd Level0 {
@@ -687,7 +687,7 @@ class TestRefinesParsing:
 
             process SubProcess {}
 
-            flow F: -> SubProcess
+            flow Context.F: -> SubProcess
         }
 
         dfd Level1 {
@@ -696,8 +696,8 @@ class TestRefinesParsing:
             process DetailA {}
             process DetailB {}
 
-            flow F: -> DetailA
-            flow Internal: DetailA -> DetailB
+            flow Level0.F: -> DetailA
+            flow Internal(InternalData): DetailA -> DetailB
         }
         """
         doc = parse_string(source)
@@ -726,7 +726,7 @@ class TestRefinesParsing:
         source = """scd Ctx {
     system Sys {}
     external E {}
-    flow F: E -> Sys
+    flow F(Data): E -> Sys
 }
 
 dfd Test {
@@ -734,7 +734,7 @@ dfd Test {
 
     process P {}
 
-    flow F: -> P
+    flow Ctx.F: -> P
 }
 """
         doc = parse_string(source)
@@ -750,7 +750,7 @@ dfd Test {
         scd MyDiagram {
             system TheSystem {}
             external E {}
-            flow F: E -> TheSystem
+            flow F(Data): E -> TheSystem
         }
 
         dfd Child {
@@ -758,7 +758,7 @@ dfd Test {
 
             process P {}
 
-            flow F: -> P
+            flow MyDiagram.F: -> P
         }
         """
         doc = parse_string(source)
@@ -775,12 +775,12 @@ class TestBoundaryFlowParsing:
     """
 
     def test_inbound_boundary_flow_parses(self) -> None:
-        """Inbound boundary flow syntax should parse: flow Name: -> Process"""
+        """Inbound boundary flow syntax should parse: flow Parent.Name: -> Process"""
         source = """
         scd Ctx {
             system Sys {}
             external E {}
-            flow Request: E -> Sys
+            flow Request(RequestData): E -> Sys
         }
 
         dfd Test {
@@ -788,7 +788,7 @@ class TestBoundaryFlowParsing:
 
             process Handler {}
 
-            flow Request: -> Handler
+            flow Ctx.Request: -> Handler
         }
         """
         doc = parse_string(source)
@@ -796,18 +796,19 @@ class TestBoundaryFlowParsing:
         assert len(dfd.flows) == 1
         flow = dfd.flows[0]
         assert flow.name == "Request"
+        assert flow.namespace == "Ctx"
         # Inbound boundary flow has no source, only target
         assert flow.source is None
         assert flow.target is not None
         assert flow.target.entity == "Handler"
 
     def test_outbound_boundary_flow_parses(self) -> None:
-        """Outbound boundary flow syntax should parse: flow Name: Process ->"""
+        """Outbound boundary flow syntax should parse: flow Parent.Name: Process ->"""
         source = """
         scd Ctx {
             system Sys {}
             external E {}
-            flow Response: Sys -> E
+            flow Response(ResponseData): Sys -> E
         }
 
         dfd Test {
@@ -815,7 +816,7 @@ class TestBoundaryFlowParsing:
 
             process Handler {}
 
-            flow Response: Handler ->
+            flow Ctx.Response: Handler ->
         }
         """
         doc = parse_string(source)
@@ -823,6 +824,7 @@ class TestBoundaryFlowParsing:
         assert len(dfd.flows) == 1
         flow = dfd.flows[0]
         assert flow.name == "Response"
+        assert flow.namespace == "Ctx"
         # Outbound boundary flow has source, no target
         assert flow.source is not None
         assert flow.source.entity == "Handler"
@@ -834,7 +836,7 @@ class TestBoundaryFlowParsing:
         scd Ctx {
             system Sys {}
             external E {}
-            flow F: E -> Sys
+            flow F(Data): E -> Sys
         }
 
         dfd Test {
@@ -843,8 +845,8 @@ class TestBoundaryFlowParsing:
             process A {}
             process B {}
 
-            flow F: -> A
-            flow Internal: A -> B
+            flow Ctx.F: -> A
+            flow Internal(InternalData): A -> B
         }
         """
         doc = parse_string(source)
@@ -863,7 +865,7 @@ class TestBoundaryFlowParsing:
         source = """scd Ctx {
     system Sys {}
     external E {}
-    flow F: E -> Sys
+    flow F(Data): E -> Sys
 }
 
 dfd Test {
@@ -871,7 +873,7 @@ dfd Test {
 
     process P {}
 
-    flow F: -> P
+    flow Ctx.F: -> P
 }
 """
         doc = parse_string(source)
@@ -888,10 +890,10 @@ dfd Test {
             system Sys {}
             external A {}
             external B {}
-            flow In1: A -> Sys
-            flow In2: B -> Sys
-            flow Out1: Sys -> A
-            flow Out2: Sys -> B
+            flow In1(D1): A -> Sys
+            flow In2(D2): B -> Sys
+            flow Out1(D3): Sys -> A
+            flow Out2(D4): Sys -> B
         }
 
         dfd Test {
@@ -900,11 +902,11 @@ dfd Test {
             process P1 {}
             process P2 {}
 
-            flow In1: -> P1
-            flow In2: -> P2
-            flow Out1: P1 ->
-            flow Out2: P2 ->
-            flow Internal: P1 -> P2
+            flow Ctx.In1: -> P1
+            flow Ctx.In2: -> P2
+            flow Ctx.Out1: P1 ->
+            flow Ctx.Out2: P2 ->
+            flow Internal(InternalData): P1 -> P2
         }
         """
         doc = parse_string(source)
@@ -933,7 +935,7 @@ class TestDFDNoExternals:
         scd Ctx {
             system Sys {}
             external E {}
-            flow F: E -> Sys
+            flow F(Data): E -> Sys
         }
 
         dfd Test {
@@ -942,7 +944,7 @@ class TestDFDNoExternals:
             external NotAllowed {}
             process P {}
 
-            flow F: -> P
+            flow Ctx.F: -> P
         }
         """
         with pytest.raises(ParseError):
@@ -961,7 +963,7 @@ class TestDFDLocalDatastore:
         scd Ctx {
             system Sys {}
             external E {}
-            flow F: E -> Sys
+            flow F(Data): E -> Sys
         }
 
         dfd Test {
@@ -970,8 +972,8 @@ class TestDFDLocalDatastore:
             process P {}
             datastore LocalCache {}
 
-            flow F: -> P
-            flow CacheWrite: P -> LocalCache
+            flow Ctx.F: -> P
+            flow CacheWrite(CacheData): P -> LocalCache
         }
         """
         doc = parse_string(source)
@@ -985,7 +987,7 @@ class TestDFDLocalDatastore:
         scd Ctx {
             system Sys {}
             external E {}
-            flow F: E -> Sys
+            flow F(Data): E -> Sys
         }
 
         dfd Test {
@@ -994,9 +996,9 @@ class TestDFDLocalDatastore:
             process P {}
             datastore LocalDB {}
 
-            flow F: -> P
-            flow Write: P -> LocalDB
-            flow Read: LocalDB -> P
+            flow Ctx.F: -> P
+            flow Write(WriteData): P -> LocalDB
+            flow Read(ReadData): LocalDB -> P
         }
         """
         doc = parse_string(source)
@@ -1085,7 +1087,7 @@ class TestNamedDataDictParsing:
         assert ss.namespace == "ShippingService"
 
     def test_qualified_flow_type_ref_in_scd(self) -> None:
-        """SCD flows should support qualified type references."""
+        """SCD flows should support qualified type references in data type clause."""
         source = """
         datadict PaymentGateway {
             PaymentRequest = { amount: decimal }
@@ -1094,7 +1096,7 @@ class TestNamedDataDictParsing:
         scd TestContext {
             system BankingSystem {}
             external PaymentGw {}
-            flow PaymentGateway.PaymentRequest: BankingSystem -> PaymentGw
+            flow PayRequest(PaymentGateway.PaymentRequest): BankingSystem -> PaymentGw
         }
         """
         doc = parse_string(source)
@@ -1103,13 +1105,14 @@ class TestNamedDataDictParsing:
         assert len(scd.flows) == 1
 
         flow = scd.flows[0]
-        # name is the simple name (last part) for display purposes
-        assert flow.name == "PaymentRequest"
-        # type_ref contains the full qualified reference
-        assert flow.type_ref is not None
-        assert flow.type_ref.namespace == "PaymentGateway"
-        assert flow.type_ref.name == "PaymentRequest"
-        assert flow.type_ref.qualified_name == "PaymentGateway.PaymentRequest"
+        # name is the flow name
+        assert flow.name == "PayRequest"
+        # data_type contains the type information
+        assert flow.data_type is not None
+        assert len(flow.data_type.types) == 1
+        assert flow.data_type.types[0].namespace == "PaymentGateway"
+        assert flow.data_type.types[0].name == "PaymentRequest"
+        assert flow.data_type.types[0].qualified_name == "PaymentGateway.PaymentRequest"
 
     def test_unqualified_flow_type_ref_in_scd(self) -> None:
         """SCD flows with unqualified type ref should have no namespace."""
@@ -1121,19 +1124,20 @@ class TestNamedDataDictParsing:
         scd TestContext {
             system S {}
             external E {}
-            flow SimpleRequest: E -> S
+            flow SimpleReq(SimpleRequest): E -> S
         }
         """
         doc = parse_string(source)
         flow = doc.scds[0].flows[0]
-        assert flow.name == "SimpleRequest"
-        assert flow.type_ref is not None
-        assert flow.type_ref.namespace is None
-        assert flow.type_ref.name == "SimpleRequest"
-        assert flow.type_ref.qualified_name == "SimpleRequest"
+        assert flow.name == "SimpleReq"
+        assert flow.data_type is not None
+        assert len(flow.data_type.types) == 1
+        assert flow.data_type.types[0].namespace is None
+        assert flow.data_type.types[0].name == "SimpleRequest"
+        assert flow.data_type.types[0].qualified_name == "SimpleRequest"
 
     def test_qualified_flow_type_ref_in_dfd_inbound(self) -> None:
-        """DFD inbound boundary flows should support qualified type references."""
+        """DFD inbound boundary flows with explicit type should support qualified references."""
         source = """
         datadict PaymentGateway {
             PaymentRequest = { amount: decimal }
@@ -1142,13 +1146,13 @@ class TestNamedDataDictParsing:
         scd Ctx {
             system S {}
             external E {}
-            flow PaymentGateway.PaymentRequest: E -> S
+            flow PayReq(PaymentGateway.PaymentRequest): E -> S
         }
 
         dfd Test {
             refines: Ctx.S
             process Handler {}
-            flow PaymentGateway.PaymentRequest: -> Handler
+            flow Ctx.PayReq(PaymentGateway.PaymentRequest): -> Handler
         }
         """
         doc = parse_string(source)
@@ -1157,14 +1161,15 @@ class TestNamedDataDictParsing:
 
         flow = dfd.flows[0]
         # name is the simple name
-        assert flow.name == "PaymentRequest"
-        # type_ref has the full reference
-        assert flow.type_ref is not None
-        assert flow.type_ref.namespace == "PaymentGateway"
-        assert flow.type_ref.name == "PaymentRequest"
+        assert flow.name == "PayReq"
+        assert flow.namespace == "Ctx"
+        # data_type has the full reference
+        assert flow.data_type is not None
+        assert flow.data_type.types[0].namespace == "PaymentGateway"
+        assert flow.data_type.types[0].name == "PaymentRequest"
 
     def test_qualified_flow_type_ref_in_dfd_outbound(self) -> None:
-        """DFD outbound boundary flows should support qualified type references."""
+        """DFD outbound boundary flows with explicit type should support qualified references."""
         source = """
         datadict PaymentGateway {
             PaymentResponse = { status: string }
@@ -1173,22 +1178,22 @@ class TestNamedDataDictParsing:
         scd Ctx {
             system S {}
             external E {}
-            flow PaymentGateway.PaymentResponse: S -> E
+            flow PayResp(PaymentGateway.PaymentResponse): S -> E
         }
 
         dfd Test {
             refines: Ctx.S
             process Handler {}
-            flow PaymentGateway.PaymentResponse: Handler ->
+            flow Ctx.PayResp(PaymentGateway.PaymentResponse): Handler ->
         }
         """
         doc = parse_string(source)
         dfd = doc.dfds[0]
         flow = dfd.flows[0]
 
-        assert flow.type_ref is not None
-        assert flow.type_ref.namespace == "PaymentGateway"
-        assert flow.type_ref.name == "PaymentResponse"
+        assert flow.data_type is not None
+        assert flow.data_type.types[0].namespace == "PaymentGateway"
+        assert flow.data_type.types[0].name == "PaymentResponse"
 
     def test_qualified_flow_type_ref_in_dfd_internal(self) -> None:
         """DFD internal flows should support qualified type references."""
@@ -1205,16 +1210,16 @@ class TestNamedDataDictParsing:
             refines: Ctx.S
             process A {}
             process B {}
-            flow Internal.ProcessedData: A -> B
+            flow InternalFlow(Internal.ProcessedData): A -> B
         }
         """
         doc = parse_string(source)
         dfd = doc.dfds[0]
         flow = dfd.flows[0]
 
-        assert flow.type_ref is not None
-        assert flow.type_ref.namespace == "Internal"
-        assert flow.type_ref.name == "ProcessedData"
+        assert flow.data_type is not None
+        assert flow.data_type.types[0].namespace == "Internal"
+        assert flow.data_type.types[0].name == "ProcessedData"
 
     def test_bidirectional_scd_flow_with_qualified_type(self) -> None:
         """SCD bidirectional flows should support qualified type references."""
@@ -1226,16 +1231,16 @@ class TestNamedDataDictParsing:
         scd TestContext {
             system S {}
             external E {}
-            flow PaymentGateway.PaymentExchange: S <-> E
+            flow PayExchange(PaymentGateway.PaymentExchange): S <-> E
         }
         """
         doc = parse_string(source)
         flow = doc.scds[0].flows[0]
 
         assert flow.direction == "bidirectional"
-        assert flow.type_ref is not None
-        assert flow.type_ref.namespace == "PaymentGateway"
-        assert flow.type_ref.name == "PaymentExchange"
+        assert flow.data_type is not None
+        assert flow.data_type.types[0].namespace == "PaymentGateway"
+        assert flow.data_type.types[0].name == "PaymentExchange"
 
     def test_named_datadict_node_has_namespace(self) -> None:
         """DataDictNode should store the namespace."""

@@ -26,6 +26,7 @@ from designit.model.datadict import (
 from designit.model.dfd import (
     DataFlow,
     Datastore,
+    DFDFlowUnion,
     DFDModel,
     ExternalEntity,
     FlowKey,
@@ -48,6 +49,7 @@ from designit.model.scd import (
     SCDExternalEntity,
     SCDFlow,
     SCDFlowTypeRef,
+    SCDFlowUnion,
     SCDModel,
     System,
 )
@@ -214,6 +216,7 @@ class SemanticAnalyzer:
         self._analyze_dfd_processes(node, model, source_file)
         self._analyze_dfd_datastores(node, model, source_file)
         inbound_handlers = self._analyze_dfd_flows(node, model, source_file)
+        self._analyze_dfd_flow_unions(node, model, source_file)
 
         # Store inbound handler counts in metadata for later validation
         model._inbound_flow_handlers = inbound_handlers  # type: ignore[attr-defined]
@@ -292,6 +295,7 @@ class SemanticAnalyzer:
                 target=target_ref,
                 flow_type=flow_type,
                 type_ref=self._convert_flow_type_ref(flow.type_ref),
+                parent_ref=flow.namespace,  # Parent diagram for inherited boundary flows
                 source_file=source_file,
                 line=flow.location.line if flow.location else None,
             )
@@ -301,6 +305,49 @@ class SemanticAnalyzer:
             model.flows[flow_key] = data_flow
 
         return inbound_flow_handlers
+
+    def _analyze_dfd_flow_unions(
+        self, node: DFDNode, model: DFDModel, source_file: str | None
+    ) -> None:
+        """Analyze flow unions in a DFD.
+
+        Flow unions are analyzed after all flows, so we can look up member flows
+        and move them from model.flows into the union's members list.
+        """
+        for union in node.flow_unions:
+            # Resolve member flows - look up each member name
+            # DFD flows use compound keys (name, flow_type), so we need to find all matching
+            member_flows: list[DataFlow] = []
+            for member_name in union.members:
+                # Find all flows with this name (could be multiple with different types)
+                found_flow = False
+                for (flow_name, flow_type), flow in list(model.flows.items()):
+                    if flow_name == member_name:
+                        member_flows.append(flow)
+                        found_flow = True
+                # Check if it's another union (nested unions)
+                if not found_flow and member_name in model.flow_unions:
+                    nested_union = model.flow_unions[member_name]
+                    member_flows.extend(nested_union.members)
+                # Member not found - will be caught by validator
+
+            flow_union = DFDFlowUnion(
+                name=union.name,
+                members=member_flows,
+                requested_member_names=union.members,  # Store original names for validation
+                source_file=source_file,
+                line=union.location.line if union.location else None,
+            )
+            if union.name in model.flow_unions:
+                self._warning(f"Duplicate flow union: {union.name}", union.name)
+            model.flow_unions[union.name] = flow_union
+
+            # Remove member flows from model.flows (they now live in the union)
+            for member_name in union.members:
+                # Remove all flows with this name
+                keys_to_remove = [key for key in model.flows.keys() if key[0] == member_name]
+                for key in keys_to_remove:
+                    del model.flows[key]
 
     def _determine_flow_type(
         self, flow: Any
@@ -646,6 +693,52 @@ class SemanticAnalyzer:
             line=node.location.line if node.location else None,
         )
 
+    def _analyze_scd_flow_unions(
+        self,
+        node: SCDNode,
+        model: SCDModel,
+        source_file: str | None,
+    ) -> None:
+        """Process flow unions in an SCD.
+
+        Flow unions are analyzed after all flows, so we can look up member flows
+        and move them from model.flows into the union's members list.
+
+        Args:
+            node: The SCD AST node.
+            model: The SCD model being built.
+            source_file: The source file path.
+        """
+        for union in node.flow_unions:
+            # Resolve member flows - look up each member name and get the actual flow
+            member_flows: list[SCDFlow] = []
+            for member_name in union.members:
+                # Check if it's a direct flow
+                if member_name in model.flows:
+                    member_flows.append(model.flows[member_name])
+                # Check if it's another union (nested unions)
+                elif member_name in model.flow_unions:
+                    # For nested unions, include all their members
+                    nested_union = model.flow_unions[member_name]
+                    member_flows.extend(nested_union.members)
+                # Member not found - will be caught by validator
+
+            flow_union = SCDFlowUnion(
+                name=union.name,
+                members=member_flows,
+                requested_member_names=union.members,  # Store original names for validation
+                source_file=source_file,
+                line=union.location.line if union.location else None,
+            )
+            if union.name in model.flow_unions:
+                self._warning(f"Duplicate flow union: {union.name}", union.name)
+            model.flow_unions[union.name] = flow_union
+
+            # Remove member flows from model.flows (they now live in the union)
+            for member_name in union.members:
+                if member_name in model.flows:
+                    del model.flows[member_name]
+
     def _analyze_scd(self, node: SCDNode, source_file: str | None) -> SCDModel:
         """Analyze an SCD AST node."""
         model = SCDModel(name=node.name, source_file=source_file)
@@ -709,6 +802,9 @@ class SemanticAnalyzer:
             if flow.name in model.flows:
                 self._warning(f"Duplicate flow: {flow.name}", flow.name)
             model.flows[flow.name] = scd_flow
+
+        # Process flow unions
+        self._analyze_scd_flow_unions(node, model, source_file)
 
         return model
 

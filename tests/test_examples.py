@@ -212,16 +212,16 @@ class TestDFDBoundaryFlowGeneration:
         scd Context {
             system Sys {}
             external User {}
-            flow Request: User -> Sys
-            flow Response: Sys -> User
+            flow Request(Request): User -> Sys
+            flow Response(Response): Sys -> User
         }
         dfd TestDFD {
             refines: Context.Sys
             process Handler {}
             process Processor {}
-            flow Request: -> Handler
-            flow Response: Processor ->
-            flow InternalData: Handler -> Processor
+            flow Context.Request: -> Handler
+            flow Context.Response: Processor ->
+            flow InternalData(InternalData): Handler -> Processor
         }
         """
         return analyze_string(source)
@@ -310,16 +310,16 @@ class TestDFDBoundaryFlowGeneration:
             system TestSys {}
             external Source {}
             external Sink {}
-            flow Input: Source -> TestSys
-            flow Output: TestSys -> Sink
+            flow Input(Data): Source -> TestSys
+            flow Output(Data): TestSys -> Sink
         }
         dfd InternalOnlyDFD {
             refines: TestContext.TestSys
             process Worker {}
             process Validator {}
-            flow Input: -> Worker
-            flow InternalFlow: Worker -> Validator
-            flow Output: Validator ->
+            flow TestContext.Input: -> Worker
+            flow InternalFlow(Data): Worker -> Validator
+            flow TestContext.Output: Validator ->
         }
         """
         doc = analyze_string(source)
@@ -356,13 +356,13 @@ class TestBidirectionalBoundaryFlowRendering:
         scd Context {
             system Sys {}
             external RemoteAPI {}
-            flow DataExchange: RemoteAPI <-> Sys
+            flow DataExchange(DataExchange): RemoteAPI <-> Sys
         }
         dfd Test {
             refines: Context.Sys
             process Handler {}
-            flow DataExchange: -> Handler
-            flow DataExchange: Handler ->
+            flow Context.DataExchange: -> Handler
+            flow Context.DataExchange: Handler ->
         }
         """
         return analyze_string(source)
@@ -377,14 +377,14 @@ class TestBidirectionalBoundaryFlowRendering:
         scd Context {
             system Sys {}
             external RemoteAPI {}
-            flow DataExchange: RemoteAPI <-> Sys
+            flow DataExchange(DataExchange): RemoteAPI <-> Sys
         }
         dfd Test {
             refines: Context.Sys
             process RequestHandler {}
             process ResponseHandler {}
-            flow DataExchange: -> RequestHandler
-            flow DataExchange: ResponseHandler ->
+            flow Context.DataExchange: -> RequestHandler
+            flow Context.DataExchange: ResponseHandler ->
         }
         """
         return analyze_string(source)

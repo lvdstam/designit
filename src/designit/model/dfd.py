@@ -71,6 +71,11 @@ class DataFlow(BaseModel):
 
     The type_ref field optionally specifies the data type being transferred,
     which may be a qualified reference to a namespaced datadict type.
+
+    The parent_ref field is set for boundary flows that reference a parent flow
+    (e.g., "flow Context.PayFlow: -> Handler" has parent_ref="Context").
+    When parent_ref is set and type_ref is None, the flow inherits its data type
+    from the referenced parent flow.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -80,9 +85,52 @@ class DataFlow(BaseModel):
     target: ElementReference | None = None
     flow_type: FlowType = "internal"
     type_ref: FlowTypeRef | None = None
+    parent_ref: str | None = None  # Parent diagram name for inherited boundary flows
     description: str | None = None
     source_file: str | None = None
     line: int | None = None
+
+
+class DFDFlowUnion(BaseModel):
+    """A flow union combining multiple flows into a single named bundle.
+
+    Flow unions allow visual simplification at higher abstraction levels.
+    Member flows are stored directly in the union (not as names requiring lookup).
+    The direction is inferred from member flows:
+    - All inbound -> inbound
+    - All outbound -> outbound
+    - Mixed or all internal -> bidirectional (or internal)
+
+    The `requested_member_names` field stores the original member names from the DSL,
+    which may include references that couldn't be resolved. This is used for validation
+    to report errors about missing members.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    members: list[DataFlow] = Field(default_factory=list)  # Actual flow objects
+    requested_member_names: list[str] = Field(default_factory=list)  # Original names from DSL
+    source_file: str | None = None
+    line: int | None = None
+
+    @property
+    def direction(self) -> FlowType | None:
+        """Infer direction from member flows."""
+        if not self.members:
+            return None
+        directions = {flow.flow_type for flow in self.members}
+        if len(directions) == 1:
+            return next(iter(directions))
+        # Mixed directions
+        if "internal" in directions:
+            return "internal"
+        return "bidirectional"
+
+    @property
+    def member_names(self) -> list[str]:
+        """Get list of member flow names (for backward compatibility)."""
+        return [flow.name for flow in self.members]
 
 
 class DFDModel(BaseModel):
@@ -105,6 +153,7 @@ class DFDModel(BaseModel):
     processes: dict[str, Process] = Field(default_factory=dict)
     datastores: dict[str, Datastore] = Field(default_factory=dict)
     flows: dict[FlowKey, DataFlow] = Field(default_factory=dict)
+    flow_unions: dict[str, DFDFlowUnion] = Field(default_factory=dict)
     source_file: str | None = None
     line: int | None = None
 
