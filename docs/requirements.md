@@ -1603,7 +1603,7 @@ Generate command shall support specifying diagram output directory.
 **Acceptance Criteria:**
 - Option: `--output-diagram-dir DIR`
 - Creates directory if it doesn't exist
-- Default: `./generated/diagrams`
+- Default: `./diagrams`
 
 **Implementation:** `src/designit/cli.py:generate()`
 
@@ -1653,11 +1653,11 @@ Generate command shall validate by default and support skipping validation.
 
 ---
 
-#### REQ-CLI-028: Output Markdown Option [DONE]
-Generate command shall support specifying markdown output file path.
+#### REQ-CLI-028: Output Directory Option [DONE]
+Generate command shall support specifying output directory of generated files.
 
 **Acceptance Criteria:**
-- Option: `--output-markdown/-m PATH`
+- Option: `--output-dir/-o PATH`
 - PATH is the full file path (directory + filename)
 - Default: `./generated/<SystemName>.md` where `<SystemName>` comes from the SCD's system name
 - Creates parent directory if it doesn't exist
@@ -2329,13 +2329,13 @@ designit generate design.dit --no-markdown
 The generate command shall support specifying markdown output file path.
 
 **Acceptance Criteria:**
-- Option: `--output-markdown/-m PATH` - full file path (directory + filename)
+- Option: `--output-dir/-o PATH` - full file path (directory + filename)
 - Default: `./generated/<scd.system.name>.md` (derived from the SCD's system name)
 - Creates directory if needed
 
 **Example:**
 ```bash
-designit generate design.dit -m docs/architecture.md
+designit generate design.dit -o docs/architecture.md
 ```
 
 **Implementation:** `src/designit/cli.py:generate()`
@@ -2369,14 +2369,14 @@ The generate command uses the same diagram directory for documentation.
 
 **Acceptance Criteria:**
 - Option: `--output-diagram-dir DIR`
-- Default: `./generated/diagrams`
+- Default: `./diagrams`
 - Diagram files written to this directory for all formats (svg, png, mmd)
-- Markdown uses relative paths from markdown file to diagram directory
+- Markdown uses the diagram directory path directly as prefix for diagram references
 - Creates directory if needed
 
 **Example:**
 ```bash
-designit generate design.dit --output-diagram-dir docs/images -m docs/design.md
+designit generate design.dit --output-diagram-dir docs/images -o docs/design.md
 ```
 
 **Implementation:** `src/designit/cli.py:generate()`

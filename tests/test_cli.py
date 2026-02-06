@@ -5,7 +5,7 @@ REQ-CLI-021: Output Diagram Directory Option
 REQ-CLI-022: Diagram Filter Option
 REQ-CLI-023: No Placeholders Flag
 REQ-CLI-025: GraphViz Rendering
-REQ-CLI-028: Output Markdown Option
+REQ-CLI-028: Output Directory Option
 REQ-CLI-029: No Markdown Flag
 """
 
@@ -86,15 +86,15 @@ class TestGenerateCommand:
     def test_default_output_directory(
         self, runner: CliRunner, sample_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Test default output directory is ./generated/diagrams (REQ-CLI-021)."""
+        """Test default output directory is ./diagrams (REQ-CLI-021)."""
         monkeypatch.chdir(tmp_path)
         result = runner.invoke(
             main,
             ["generate", str(sample_file), "-f", "mermaid"],
         )
         assert result.exit_code == 0
-        # Default diagram dir is now ./generated/diagrams
-        generated_dir = tmp_path / "generated" / "diagrams"
+        # Default diagram dir is now ./diagrams
+        generated_dir = tmp_path / "diagrams"
         assert generated_dir.exists()
         assert len(list(generated_dir.glob("*.mmd"))) > 0
 
@@ -349,7 +349,7 @@ scd Context {
         )
         assert result.exit_code == 0
         # Default markdown path is ./generated/<SystemName>.md
-        # Since we didn't specify --output-markdown, it should use default
+        # Since we didn't specify --output-dir, it should use default
         # But our tmp_path is different, so check that markdown was generated
         assert "Generated" in result.output
         # The markdown file should be in ./generated/API.md (system name is API)
@@ -368,7 +368,7 @@ scd Context {
                 "mermaid",
                 "--output-diagram-dir",
                 str(tmp_path / "diagrams"),
-                "--output-markdown",
+                "--output-dir",
                 str(md_path),
             ],
         )
